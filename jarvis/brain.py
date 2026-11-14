@@ -5,7 +5,7 @@ import json
 
 import requests
 
-from . import actions
+from . import actions, vision, weather  # imports statiques : embarqués dans le .exe
 
 API_URL = "https://api.groq.com/openai/v1/chat/completions"
 MODELS_URL = "https://api.groq.com/openai/v1/models"
@@ -26,7 +26,8 @@ def _tool(name, desc, props=None, required=None):
 
 S = {"type": "string"}
 TOOLS = [
-    _tool("open_app", "Lance une application, un logiciel ou un jeu installé (Spotify, Discord, Chrome, Minecraft...).",
+    _tool("open_app", "Ouvre une application, un jeu, une fenêtre déjà ouverte ou un favori du navigateur par son nom "
+          "(Spotify, Discord, Minecraft, « Planning partagé »…). À essayer AVANT open_folder.",
           {"name": S}, ["name"]),
     _tool("close_app", "Ferme une application par son nom de processus (ex: spotify, discord, chrome).",
           {"name": S}, ["name"]),
@@ -44,7 +45,7 @@ TOOLS = [
           {"query": S}, ["query"]),
     _tool("find_files", "Cherche des fichiers par nom dans les dossiers autorisés.", {"query": S}, ["query"]),
     _tool("open_path", "Ouvre un fichier ou dossier par son chemin complet.", {"path": S}, ["path"]),
-    _tool("open_folder", "Ouvre un dossier par son nom (bureau, téléchargements… ou n'importe quel dossier de l'utilisateur, "
+    _tool("open_folder", "Ouvre un DOSSIER de fichiers par son nom, seulement si l'utilisateur dit « dossier » (bureau, téléchargements… ou n'importe quel dossier de l'utilisateur, "
           "recherché automatiquement, même mal orthographié ou sans tirets).",
           {"name": S}, ["name"]),
     _tool("organize_downloads", "Range le dossier Téléchargements par type de fichier."),
@@ -154,9 +155,9 @@ class Brain:
             "organize_downloads": lambda: a.organize_downloads(cfg),
             "system": lambda: a.system(args["action"]),
             "web_search": lambda: a.web_search(args["query"]),
-            "look_at_screen": lambda: __import__("jarvis.vision", fromlist=["look"]).look(args["question"], cfg),
-            "get_weather": lambda: __import__("jarvis.weather", fromlist=["weather"]).weather(args.get("city", ""), args.get("day", "aujourd'hui")),
-            "ask_web": lambda: __import__("jarvis.weather", fromlist=["ask_web"]).ask_web(args["question"], cfg),
+            "look_at_screen": lambda: vision.look(args["question"], cfg),
+            "get_weather": lambda: weather.weather(args.get("city", ""), args.get("day", "aujourd'hui")),
+            "ask_web": lambda: weather.ask_web(args["question"], cfg),
             "open_website": lambda: a.open_website(args["url"]),
             "type_text": lambda: a.type_text(args["text"]),
             "set_timer": lambda: a.set_timer(args["seconds"], args.get("label", "minuteur"), self.speak),
@@ -200,6 +201,6 @@ class Brain:
                         self.history.append({"role": "assistant", "content": last})
                         return last  # réponse directe : pas de 2e appel (moins de tokens, pas de « C'est fait »)
                 done_list.append(result if name not in actions.READERS else "")
-                results_summary = " ".join(x for x in done_list if x)
+                results_summary = " ".join(x.strip() for x in done_list if x)
                 messages.append({"role": "tool", "tool_call_id": c["id"], "content": result})
         return last or " ".join(x for x in done_list if x) or "Je n'ai rien pu faire pour cette demande."

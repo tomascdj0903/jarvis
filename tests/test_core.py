@@ -202,7 +202,10 @@ def test_open_app_real():
         opened.clear(); real.open_app(name); assert opened == [url], (name, opened)
     for name, want in {"PNL sur YouTube": "play[youtube]:pnl", "pnl sur youtube music": "play[youtube_music]:pnl"}.items():
         opened.clear(); assert real.open_app(name) == want and not opened, (name, opened)
+    real.switch_window = lambda n: None; real.open_bookmark = lambda n: None
     opened.clear(); assert "introuvable" in real.open_app("radio canada youtube") and not opened
+    assert real._sim("planning partagé", "Planning partagé - Google Sheets - Google Chrome") == 1.0
+    assert real._sim("planning partagé", "planning") < 1.0
     sys.modules["jarvis.actions"] = fake; jarvis.actions = fake
 
 

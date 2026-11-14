@@ -100,7 +100,7 @@ $oww = (& $vpy -c "import openwakeword,os;print(os.path.dirname(openwakeword.__f
 & $vpy -m PyInstaller --noconfirm --clean --windowed --name Jarvis `
     --icon assets\jarvis.ico --add-data "assets;assets" --add-data "$oww;openwakeword" `
     --collect-all onnxruntime --collect-all winrt --collect-all edge_tts --collect-all sounddevice `
-    --hidden-import pystray._win32 run_jarvis.py
+    --hidden-import pystray._win32 --collect-submodules jarvis run_jarvis.py
 $exe = Join-Path $Root "dist\Jarvis\Jarvis.exe"
 if (-not (Test-Path $exe)) { Fail "La fabrication du .exe a echoue. Lance 2_lancer.bat pour voir l'erreur." }
 

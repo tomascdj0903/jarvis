@@ -62,7 +62,7 @@ jobs:
           pyinstaller --noconfirm --clean --windowed --name Jarvis `
             --icon assets\jarvis.ico --add-data "assets;assets" --add-data "$oww;openwakeword" `
             --collect-all onnxruntime --collect-all winrt --collect-all edge_tts --collect-all sounddevice `
-            --hidden-import pystray._win32 run_jarvis.py
+            --hidden-import pystray._win32 --collect-submodules jarvis run_jarvis.py
       - name: Auto-test du .exe (tout est-il bien embarqué ?)
         shell: pwsh
         run: |

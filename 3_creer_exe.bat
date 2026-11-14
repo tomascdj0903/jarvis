@@ -12,7 +12,7 @@ pyinstaller --noconfirm --clean --windowed --name Jarvis ^
   --collect-all winrt ^
   --collect-all edge_tts ^
   --collect-all sounddevice ^
-  --hidden-import pystray._win32 ^
+  --hidden-import pystray._win32 --collect-submodules jarvis ^
   run_jarvis.py
 echo.
 echo   Termine : dist\Jarvis\Jarvis.exe

@@ -176,6 +176,64 @@ def _find_app(name: str):
     return None, None
 
 
+def _sim(a: str, b: str) -> float:
+    """Proportion des mots de « a » présents dans « b » (accents et ponctuation ignorés)."""
+    wa = [w for w in _norm_txt(a).split() if len(w) > 1]
+    wb = set(_norm_txt(b).split())
+    if not wa:
+        return 0.0
+    hit = sum(1 for w in wa if w in wb or any(x.startswith(w[:5]) for x in wb if len(w) >= 5))
+    return hit / len(wa)
+
+
+def switch_window(name: str):
+    """Passe sur une fenêtre déjà ouverte (barre des tâches) dont le titre correspond. None si aucune."""
+    best, score = None, 0.0
+    for hwnd, exe, title in _windows():
+        if exe in ("jarvis.exe",) or not title:
+            continue
+        sc = _sim(name, title)
+        if sc > score:
+            best, score = (hwnd, title), sc
+    if best and score >= 0.99:
+        _force_front(best[0])
+        return f"Fenêtre « {best[1][:60]} » affichée."
+    return None
+
+
+def _bookmarks():
+    """[(nom, url)] des favoris Chrome, Edge et Brave (tous profils)."""
+    import json
+    out = []
+    local = Path(os.environ.get("LOCALAPPDATA", ""))
+    for base in ("Google/Chrome", "Microsoft/Edge", "BraveSoftware/Brave-Browser"):
+        for f in (local / base / "User Data").glob("*/Bookmarks"):
+            try:
+                data = json.loads(f.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            stack = list(data.get("roots", {}).values())
+            while stack:
+                n = stack.pop()
+                if isinstance(n, dict):
+                    if n.get("type") == "url":
+                        out.append((n.get("name", ""), n.get("url", "")))
+                    stack.extend(n.get("children", []))
+    return out
+
+
+def open_bookmark(name: str):
+    best, score = None, 0.0
+    for title, url in _bookmarks():
+        sc = _sim(name, title)
+        if sc > score:
+            best, score = (title, url), sc
+    if best and score >= 0.99 and best[1].startswith(("http://", "https://")):
+        open_url(best[1])
+        return f"Favori « {best[0][:60]} » ouvert."
+    return None
+
+
 # Services web connus : ouverts directement, jamais confondus avec autre chose
 WEB_APPS = {
     "youtube music": "https://music.youtube.com", "yt music": "https://music.youtube.com",
@@ -209,7 +267,8 @@ def open_app(name: str) -> str:
         open_url(WEB_APPS[site]); return f"{site.title()} ouvert."
     key, target = _find_app(n)           # 3. appli installée, nom approché
     if not target:
-        return f"Application « {name} » introuvable."
+        # 4. fenêtre déjà ouverte (onglet actif, document…), 5. favori du navigateur
+        return switch_window(n) or open_bookmark(n) or f"Application « {name} » introuvable."
     os.startfile(target)
     if not str(target).startswith("steam://"):
         bring_to_front(exes=(), title_hint=key.split()[0], delay=2.0, tries=10)
