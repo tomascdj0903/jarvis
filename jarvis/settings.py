@@ -66,7 +66,7 @@ class Wizard:
             w.iconbitmap(str(config.resource("assets/jarvis.ico")))
         except Exception:
             pass
-        W, H = 560, 760
+        W, H = 560, 800
         w.geometry(f"{W}x{H}+{(w.winfo_screenwidth()-W)//2}+{(w.winfo_screenheight()-H)//2}")
         w.attributes("-topmost", True)
         style = ttk.Style(w)
@@ -114,6 +114,11 @@ class Wizard:
         self.mic.pack(fill="x", ipady=4)
         self.mic.bind("<<ComboboxSelected>>", lambda e: self.start_meter())
         self.meter = tk.Canvas(f, height=10, bg="#12324A", highlightthickness=0); self.meter.pack(fill="x", pady=(6, 0))
+        trow = tk.Frame(f, bg=BG); trow.pack(fill="x", pady=(6, 0))
+        self._btn(trow, "Tester ce micro", self.test_mic).pack(side="left")
+        self.mic_status = tk.Label(trow, text="Enregistre 3 s puis te fait réécouter ta voix",
+                                   fg=GREY, bg=BG, font=("Segoe UI", 9))
+        self.mic_status.pack(side="left", padx=8)
 
         label("4 · MUSIQUE — où lancer « mets du Dua Lipa »")
         self.services = [("youtube", "YouTube"), ("youtube_music", "YouTube Music"),
@@ -170,6 +175,33 @@ class Wizard:
             self.stream.start()
         except Exception:
             self.stream, self.level = None, -1
+
+    def test_mic(self):
+        """Enregistre 3 secondes avec le micro choisi puis les rejoue."""
+        import numpy as np
+        import sounddevice as sd
+        dev = self.device()
+        if self.stream:
+            try: self.stream.close()
+            except Exception: pass
+            self.stream = None
+        self.mic_status.config(text="● Parlez maintenant… (3 s)", fg=RED)
+
+        def run():
+            try:
+                rec = sd.rec(int(3 * 16000), samplerate=16000, channels=1, dtype="int16", device=dev)
+                sd.wait()
+                peak = int(np.abs(rec).max())
+                self.w.after(0, lambda: self.mic_status.config(text="▶ Réécoute…", fg=CYAN))
+                sd.play(rec, 16000); sd.wait()
+                if peak < 300:
+                    msg, col = "✗ Presque rien capté : essayez un autre micro", RED
+                else:
+                    msg, col = "✓ Ce micro fonctionne", GREEN
+            except Exception as e:
+                msg, col = f"✗ Micro inutilisable ({e.__class__.__name__})", RED
+            self.w.after(0, lambda: (self.mic_status.config(text=msg, fg=col), self.start_meter()))
+        threading.Thread(target=run, daemon=True).start()
 
     def draw_meter(self):
         c = self.meter; c.delete("all")
