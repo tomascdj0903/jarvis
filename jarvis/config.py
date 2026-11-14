@@ -25,6 +25,7 @@ DEFAULTS = {
     "user_name": "Monsieur",
     "wake_threshold": 0.35,
     "show_idle_orb": True,
+    "input_device": None,
     "hotkey": "ctrl+alt+j",
     "allowed_folders": [
         str(Path.home() / "Desktop"),

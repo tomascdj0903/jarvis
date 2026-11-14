@@ -90,7 +90,7 @@ class Brain:
         return requests.post(API_URL, timeout=30, headers=self._headers(),
                              json={"model": self.cfg["llm_model"], "messages": messages,
                                    "tools": TOOLS, "tool_choice": "auto", "temperature": 0.4,
-                                   "max_tokens": 400})
+                                   "max_tokens": 250})
 
     def _call(self, messages):
         r = self._post(messages)
@@ -138,7 +138,7 @@ class Brain:
             return f"Erreur : {e}"
 
     def ask(self, text: str) -> str:
-        self.history = self.history[-10:]
+        self.history = self.history[-6:]  # 3 échanges suffisent
         self.history.append({"role": "user", "content": text})
         messages = [{"role": "system", "content": self._system()}] + self.history
         for _ in range(4):  # quelques tours d'outils max

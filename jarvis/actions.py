@@ -101,12 +101,17 @@ def open_app(name: str) -> str:
 
 
 def close_app(name: str) -> str:
-    exe = name.lower().replace(" ", "")
-    if not exe.endswith(".exe"):
-        exe += ".exe"
-    r = subprocess.run(["taskkill", "/IM", exe, "/F"], capture_output=True, text=True,
+    """Ferme un programme en cherchant son processus par nom approché."""
+    want = name.lower().replace(" ", "").removesuffix(".exe")
+    r = subprocess.run(["tasklist", "/FO", "CSV", "/NH"], capture_output=True, text=True,
                        creationflags=0x08000000)
-    return f"{name} fermé." if r.returncode == 0 else f"Impossible de fermer {name} (processus {exe} introuvable)."
+    procs = {line.split('","')[0].strip('"') for line in r.stdout.splitlines() if line}
+    hits = [p for p in procs if want in p.lower().replace(" ", "")]
+    if not hits:
+        return f"Aucun programme « {name} » en cours."
+    for p in hits:
+        subprocess.run(["taskkill", "/IM", p, "/F"], capture_output=True, creationflags=0x08000000)
+    return f"{name} fermé."
 
 
 def list_apps(query: str = "") -> str:
@@ -231,10 +236,10 @@ def open_website(url: str) -> str:
 
 
 def type_text(text: str) -> str:
-    """Tape du texte dans la fenêtre active via le presse-papiers."""
-    import tkinter as tk
-    r = tk.Tk(); r.withdraw(); r.clipboard_clear(); r.clipboard_append(text); r.update(); r.destroy()
-    time.sleep(0.1)
+    """Tape du texte dans la fenêtre active (presse-papiers + Ctrl+V)."""
+    subprocess.run(["powershell", "-NoProfile", "-Command", "Set-Clipboard -Value $input"],
+                   input=text, text=True, creationflags=0x08000000)
+    time.sleep(0.15)
     user32.keybd_event(0x11, 0, 0, 0); user32.keybd_event(0x56, 0, 0, 0)
     user32.keybd_event(0x56, 0, 2, 0); user32.keybd_event(0x11, 0, 2, 0)
     return "Texte tapé."

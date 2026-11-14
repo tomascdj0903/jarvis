@@ -98,25 +98,17 @@ class Jarvis:
             if msg.message == 0x0312:
                 self.listen_now()
 
-    # ----- première configuration -----
-    def ensure_key(self):
-        if self.cfg.get("groq_api_key"):
-            return True
-        messagebox.showinfo("J.A.R.V.I.S.",
-                            "Bienvenue. Il me faut une clé API Groq gratuite.\n\n"
-                            "1. Va sur console.groq.com et connecte-toi\n"
-                            "2. API Keys > Create API Key\n"
-                            "3. Colle la clé dans la fenêtre suivante.")
-        key = simpledialog.askstring("J.A.R.V.I.S.", "Clé API Groq :", parent=self.root)
-        if not key:
-            return False
-        name = simpledialog.askstring("J.A.R.V.I.S.", "Comment dois-je vous appeler ?",
-                                      initialvalue="Monsieur", parent=self.root) or "Monsieur"
-        self.cfg.update(groq_api_key=key.strip(), user_name=name.strip())
-        config.save(self.cfg)
-        if messagebox.askyesno("J.A.R.V.I.S.", "Lancer Jarvis automatiquement au démarrage de Windows ?"):
-            set_autostart(True)
-        return True
+    # ----- configuration -----
+    def open_settings(self, first_run=False, then=None):
+        from .settings import Wizard
+
+        def done(saved):
+            if saved:
+                set_autostart(self.cfg.get("_autostart", True))
+                self.hud.show_idle = self.cfg.get("show_idle_orb", True)
+            if then:
+                then(saved)
+        Wizard(self.root, self.cfg, first_run=first_run, on_done=done)
 
     # ----- parole/écoute -----
     def on_state(self, state, level=0.0):
@@ -173,7 +165,12 @@ class Jarvis:
                     self.hud.notify("Je n'ai rien entendu.", 3)
                     continue
                 self.hud.set("thinking", 0, text)
-                reply = self.brain.ask(text)
+                from .router import route
+                reply = route(text)  # commandes courantes : instantané, 0 token
+                if reply is None:
+                    reply = self.brain.ask(text)
+                else:
+                    log.info("routeur local")
                 self.say(reply)
             except Exception as e:
                 log.exception("loop")
@@ -196,7 +193,7 @@ class Jarvis:
             self.voice.paused = not self.voice.paused
 
         def settings(icon, item):
-            os.startfile(str(config.CONFIG_FILE))
+            self.root.after(0, self.open_settings)
 
         def logs(icon, item):
             os.startfile(str(config.LOG_FILE))
@@ -227,7 +224,7 @@ class Jarvis:
             pystray.MenuItem("Réindexer les applications", rescan),
             pystray.MenuItem("Rechercher une mise à jour",
                              lambda i, it: threading.Thread(target=self.check_update, args=(True,), daemon=True).start()),
-            pystray.MenuItem("Réglages (config.json)", settings),
+            pystray.MenuItem("Réglages…", settings),
             pystray.MenuItem("Journal", logs),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Quitter", quit_),
@@ -289,19 +286,36 @@ class Jarvis:
             messagebox.showerror("J.A.R.V.I.S.", f"Échec du téléchargement de la mise à jour :\n{e}")
             return False
 
+    def start(self):
+        splash(self.root, self.ready)
+        threading.Thread(target=self.loop, daemon=True).start()
+        self.tray()
+
     def run(self):
         if self.update_before_start():
             self.root.destroy()
             os._exit(0)
-        if not self.ensure_key():
-            return
-        splash(self.root, self.ready)
-        threading.Thread(target=self.loop, daemon=True).start()
-        self.tray()
+        if not self.cfg.get("groq_api_key"):
+            self.open_settings(first_run=True,
+                               then=lambda ok: self.start() if ok else (self.root.destroy(), os._exit(0)))
+        else:
+            self.start()
         self.root.mainloop()
 
 
+def single_instance() -> bool:
+    """Empêche deux Jarvis en même temps (un seul en arrière-plan)."""
+    import ctypes
+    ctypes.windll.kernel32.CreateMutexW(None, False, "Global\\JarvisAssistantMutex")
+    return ctypes.windll.kernel32.GetLastError() != 183  # ERROR_ALREADY_EXISTS
+
+
 def main():
+    if not single_instance():
+        r = tk.Tk(); r.withdraw()
+        messagebox.showinfo("J.A.R.V.I.S.", "Jarvis tourne déjà en arrière-plan.\n"
+                            "Dites « Hey Jarvis », Ctrl+Alt+J, ou clic droit sur l'icône près de l'horloge.")
+        return
     Jarvis().run()
 
 

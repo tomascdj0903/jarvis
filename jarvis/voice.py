@@ -39,7 +39,7 @@ class Voice:
         self.oww.reset()
         self.trigger.clear()
         n = 0
-        with sd.InputStream(samplerate=RATE, channels=1, dtype="int16", blocksize=CHUNK) as st:
+        with sd.InputStream(device=self.cfg.get("input_device"), samplerate=RATE, channels=1, dtype="int16", blocksize=CHUNK) as st:
             while True:
                 data, _ = st.read(CHUNK)
                 if self.trigger.is_set():
@@ -61,7 +61,7 @@ class Voice:
         """Enregistre jusqu'à un silence ; renvoie un WAV."""
         frames, silent, started = [], 0.0, False
         t0 = time.time()
-        with sd.InputStream(samplerate=RATE, channels=1, dtype="int16", blocksize=CHUNK) as st:
+        with sd.InputStream(device=self.cfg.get("input_device"), samplerate=RATE, channels=1, dtype="int16", blocksize=CHUNK) as st:
             while time.time() - t0 < max_s:
                 data, _ = st.read(CHUNK)
                 frames.append(data.copy())
@@ -109,8 +109,11 @@ class Voice:
         self.on_state("speaking")
         try:
             path = os.path.join(tempfile.gettempdir(), f"jarvis_{int(time.time()*1000)}.mp3")
-            asyncio.run(edge_tts.Communicate(text, self.cfg["voice"], rate="+5%").save(path))
-            _play_mp3(path)
+            try:
+                asyncio.run(edge_tts.Communicate(text, self.cfg["voice"], rate="+5%").save(path))
+                _play_mp3(path)
+            except Exception:
+                _speak_windows(text)  # voix Windows hors ligne
             try:
                 os.remove(path)
             except OSError:
@@ -133,3 +136,12 @@ def _play_mp3(path):
     mci(f'open "{path}" type mpegvideo alias jv', None, 0, None)
     mci("play jv wait", None, 0, None)
     mci("close jv", None, 0, None)
+
+
+def _speak_windows(text):
+    import subprocess
+    t = text.replace("'", "''")
+    subprocess.run(["powershell", "-NoProfile", "-Command",
+                    "Add-Type -AssemblyName System.Speech;"
+                    f"(New-Object System.Speech.Synthesis.SpeechSynthesizer).Speak('{t}')"],
+                   creationflags=0x08000000)
