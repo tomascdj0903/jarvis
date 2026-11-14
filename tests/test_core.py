@@ -181,6 +181,29 @@ def test_injection_guard():
     assert ran == ["look_at_screen"], ran  # type_text bloqué après lecture de l'écran
 
 
+def test_phase2():
+    from jarvis import brain
+    calls = []
+
+    class R:
+        def __init__(self, code, msg=None): self.status_code = code; self.ok = code == 200; self.text = "x"; self.headers = {}; self.m = msg
+        def json(self): return {"choices": [{"message": self.m}]} if self.m else {"error": {"message": "quota"}}
+    def post(url, **k):
+        calls.append(url)
+        return R(429) if "groq" in url else R(200, {"content": "Réponse de secours."})
+    brain.requests.post = post
+    import time as _t; old = _t.sleep; _t.sleep = lambda s: None
+    try:
+        b = brain.Brain(dict(config.DEFAULTS, groq_api_key="g", gemini_api_key="k"), print, lambda q: True)
+        assert b.ask("bonjour") == "Réponse de secours."
+        assert any("generativelanguage" in u for u in calls), calls
+    finally:
+        _t.sleep = old
+    import jarvis.macros as M
+    M.load = lambda: {"mode jeu": ["open:discord", "volume:60"]}
+    assert M.match("mode jeu") and M.match("lance le mode jeu") and not M.match("mode cours")
+
+
 if __name__ == "__main__":
     pass
 
@@ -269,6 +292,29 @@ def test_injection_guard():
     assert ran == ["look_at_screen"], ran  # type_text bloqué après lecture de l'écran
 
 
+def test_phase2():
+    from jarvis import brain
+    calls = []
+
+    class R:
+        def __init__(self, code, msg=None): self.status_code = code; self.ok = code == 200; self.text = "x"; self.headers = {}; self.m = msg
+        def json(self): return {"choices": [{"message": self.m}]} if self.m else {"error": {"message": "quota"}}
+    def post(url, **k):
+        calls.append(url)
+        return R(429) if "groq" in url else R(200, {"content": "Réponse de secours."})
+    brain.requests.post = post
+    import time as _t; old = _t.sleep; _t.sleep = lambda s: None
+    try:
+        b = brain.Brain(dict(config.DEFAULTS, groq_api_key="g", gemini_api_key="k"), print, lambda q: True)
+        assert b.ask("bonjour") == "Réponse de secours."
+        assert any("generativelanguage" in u for u in calls), calls
+    finally:
+        _t.sleep = old
+    import jarvis.macros as M
+    M.load = lambda: {"mode jeu": ["open:discord", "volume:60"]}
+    assert M.match("mode jeu") and M.match("lance le mode jeu") and not M.match("mode cours")
+
+
 if __name__ == "__main__":
-    test_router(); test_weather_routing(); test_versions(); test_brain_tool_loop(); test_open_app_real(); test_search_and_correct(); test_phase1(); test_injection_guard()
+    test_router(); test_weather_routing(); test_versions(); test_brain_tool_loop(); test_open_app_real(); test_search_and_correct(); test_phase1(); test_injection_guard(); test_phase2()
     print(f"TOUS LES TESTS OK ({len(CASES)} phrases)")

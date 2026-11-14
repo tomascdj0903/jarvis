@@ -134,6 +134,13 @@ def _open(name):
 
 def route(text: str):
     t = clean(text)
+    try:
+        from . import macros
+        steps = macros.match(t)
+        if steps:
+            return macros.run(steps)
+    except Exception:
+        pass
     if not t:
         return None
     for pat, fn in RULES:

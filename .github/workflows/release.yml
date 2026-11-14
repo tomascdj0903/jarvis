@@ -1,12 +1,12 @@
 name: Build & Release Jarvis
 
 # Publication automatique : dès que la version dans jarvis/__init__.py n'a pas encore de release.
-# Vérifié à chaque push sur main ET toutes les 15 minutes (au cas où un push ne déclenche rien).
+# Vérifié à chaque push sur main et une fois par jour (au cas où un push ne déclenche rien).
 on:
   push:
     branches: [main]
   schedule:
-    - cron: "*/15 * * * *"
+    - cron: "17 6 * * *"
   workflow_dispatch:
 
 permissions:
@@ -72,12 +72,16 @@ jobs:
           Remove-Item dist\Jarvis\selftest.txt
       - name: Archive
         shell: pwsh
-        run: Compress-Archive -Path dist\Jarvis -DestinationPath Jarvis-Windows.zip
+        run: |
+          Compress-Archive -Path dist\Jarvis -DestinationPath Jarvis-Windows.zip
+          (Get-FileHash Jarvis-Windows.zip -Algorithm SHA256).Hash.ToLower() + "  Jarvis-Windows.zip" | Out-File -Encoding ascii Jarvis-Windows.zip.sha256
       - name: Publier la release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.check.outputs.tag }}
           name: J.A.R.V.I.S. ${{ needs.check.outputs.tag }}
           target_commitish: ${{ github.sha }}
-          files: Jarvis-Windows.zip
+          files: |
+            Jarvis-Windows.zip
+            Jarvis-Windows.zip.sha256
           generate_release_notes: true

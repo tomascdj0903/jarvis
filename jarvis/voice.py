@@ -26,6 +26,8 @@ class Voice:
         self.trigger = threading.Event()  # écoute forcée (raccourci / clic sur l'orbe)
         self.last_score = 0.0
         self.needs_verify = False
+        self.noise = 150.0          # bruit de fond mesuré en continu (calibrage automatique)
+        self.stop_speech = threading.Event()
         from openwakeword.model import Model
         import openwakeword.utils
         try:
@@ -60,8 +62,9 @@ class Voice:
             score = max(self.oww.predict(data[:, 0]).values())
             self.last_score = max(self.last_score * 0.9, score)
             n += 1
+            lvl = float(np.sqrt(np.mean(data.astype(np.float32) ** 2)))
+            self.noise = 0.995 * self.noise + 0.005 * min(lvl, 3000)  # moyenne lente du bruit ambiant
             if n % 3 == 0:
-                lvl = float(np.sqrt(np.mean(data.astype(np.float32) ** 2)))
                 self.on_state("idle", min(1.0, lvl / 3000))
             # déclenche sur un pic franc OU sur deux trames moyennement sûres d'affilée
             hot = hot + 1 if score >= thr * 0.6 else 0
@@ -72,7 +75,7 @@ class Voice:
                 self.preroll = list(ring) if self.needs_verify else []
                 return "wake"
 
-    def record_command(self, max_s=9.0, silence_s=1.1) -> bytes:
+    def record_command(self, max_s=9.0, silence_s=1.1, start_timeout=5.0) -> bytes:
         """Continue sur le MÊME flux micro (aucune coupure après le réveil), s'arrête au silence."""
         st = getattr(self, "stream", None)
         own = st is None
@@ -87,13 +90,14 @@ class Voice:
                 frames.append(data.copy())
                 lvl = float(np.sqrt(np.mean(data.astype(np.float32) ** 2)))
                 self.on_state("listening", min(1.0, lvl / 3000))
-                if lvl > 450:
+                speech = max(250.0, self.noise * 3.0)   # seuil adapté au micro et à la pièce
+                if lvl > speech:
                     started, silent = True, 0.0
                 else:
                     silent += CHUNK / RATE
                 if started and silent >= silence_s:
                     break
-                if not started and time.time() - t0 > 5:
+                if not started and time.time() - t0 > start_timeout:
                     break
         finally:
             try: st.stop(); st.close()
@@ -130,10 +134,10 @@ class Voice:
     HALLU = ("sous-titrage", "sous titrage", "radio-canada", "radio canada", "amara.org", "merci d'avoir regardé",
              "sous-titres réalisés", "abonnez-vous", "st' 501", "sous-titres par", "♪")
 
-    def listen(self) -> str:
-        wav = self.record_command()
+    def listen(self, start_timeout=5.0) -> str:
+        wav = self.record_command(start_timeout=start_timeout)
         pcm = np.frombuffer(wav[44:], dtype=np.int16)
-        if pcm.size == 0 or float(np.sqrt(np.mean(pcm.astype(np.float32) ** 2))) < 120:
+        if pcm.size == 0 or float(np.sqrt(np.mean(pcm.astype(np.float32) ** 2))) < max(120.0, self.noise * 1.3):
             return ""  # silence : on n'envoie rien (évite les phrases inventées par Whisper)
         text = self.transcribe(wav)
         if any(h in text.lower() for h in self.HALLU):
@@ -147,11 +151,13 @@ class Voice:
         self.on_state("speaking")
         try:
             path = os.path.join(tempfile.gettempdir(), f"jarvis_{int(time.time()*1000)}.mp3")
+            self.stop_speech.clear()
             try:
                 asyncio.run(edge_tts.Communicate(text, self.cfg["voice"], rate="+5%").save(path))
-                _play_mp3(path)
+                _play_mp3(path, self.stop_speech)
             except Exception:
-                _speak_windows(text)  # voix Windows hors ligne
+                if not self.stop_speech.is_set():
+                    _speak_windows(text)  # voix Windows hors ligne
             try:
                 os.remove(path)
             except OSError:
@@ -171,18 +177,34 @@ class Voice:
         threading.Thread(target=run, daemon=True).start()
 
 
-def _play_mp3(path):
-    """Lecture via l'API MCI de Windows (aucune dépendance)."""
+_mci_lock = threading.Lock()
+
+
+def _play_mp3(path, stop=None):
+    """Lecture via l'API MCI de Windows ; s'arrête dès que « stop » est levé (clic, Ctrl+Alt+J)."""
     mci = ctypes.windll.winmm.mciSendStringW
-    mci(f'open "{path}" type mpegvideo alias jv', None, 0, None)
-    mci("play jv wait", None, 0, None)
-    mci("close jv", None, 0, None)
+    with _mci_lock:  # une seule voix à la fois (minuteur + réponse ne se chevauchent plus)
+        alias = f"jv{threading.get_ident()}"
+        mci(f'open "{path}" type mpegvideo alias {alias}', None, 0, None)
+        mci(f"play {alias}", None, 0, None)
+        buf = ctypes.create_unicode_buffer(64)
+        while True:
+            time.sleep(0.1)
+            mci(f"status {alias} mode", buf, 64, None)
+            if buf.value != "playing" or (stop is not None and stop.is_set()):
+                break
+        mci(f"stop {alias}", None, 0, None)
+        mci(f"close {alias}", None, 0, None)
+
+
+_sapi_lock = threading.Lock()
 
 
 def _speak_windows(text):
     import subprocess
     t = text.replace("'", "''")
-    subprocess.run(["powershell", "-NoProfile", "-Command",
+    with _sapi_lock:
+        subprocess.run(["powershell", "-NoProfile", "-Command",
                     "Add-Type -AssemblyName System.Speech;"
                     f"(New-Object System.Speech.Synthesis.SpeechSynthesizer).Speak('{t}')"],
-                   creationflags=0x08000000)
+                       creationflags=0x08000000)

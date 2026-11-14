@@ -157,6 +157,29 @@ def scan_apps() -> dict:
                     apps.setdefault(name.lower(), f"steam://rungameid/{appid}")
                 except Exception:
                     pass
+    # Jeux Epic Games
+    man = Path(os.environ.get("ProgramData", r"C:\ProgramData")) / r"Epic\EpicGamesLauncher\Data\Manifests"
+    if man.exists():
+        import json
+        for item in man.glob("*.item"):
+            try:
+                d = json.loads(item.read_text(encoding="utf-8", errors="ignore"))
+                if d.get("DisplayName") and d.get("AppName"):
+                    apps.setdefault(d["DisplayName"].lower(),
+                                    f"com.epicgames.launcher://apps/{d['AppName']}?action=launch&silent=true")
+            except Exception:
+                pass
+    # Applis du Microsoft Store / Xbox (WhatsApp, Netflix, Minecraft…)
+    try:
+        r = subprocess.run(["powershell", "-NoProfile", "-Command",
+                            "Get-StartApps | ForEach-Object { $_.Name + '|' + $_.AppID }"],
+                           capture_output=True, text=True, timeout=20, creationflags=0x08000000)
+        for line in r.stdout.splitlines():
+            if "|" in line and "!" in line:  # AppID des applis Store
+                nm, aid = line.rsplit("|", 1)
+                apps.setdefault(nm.strip().lower(), f"shell:AppsFolder\\{aid.strip()}")
+    except Exception:
+        pass
     _APPS.clear()
     _APPS.update(apps)
     return apps
@@ -249,13 +272,20 @@ WEB_APPS = {
 }
 
 
+def _launch(target: str):
+    if str(target).startswith("shell:"):
+        subprocess.Popen(["explorer.exe", target])
+    else:
+        os.startfile(target)
+
+
 def open_app(name: str) -> str:
     import webbrowser
     n = name.lower().strip().removesuffix(".").strip()
     if not _APPS:
         scan_apps()
     if n in _APPS:                       # 1. appli installée, nom exact
-        os.startfile(_APPS[n]); bring_to_front(exes=(), title_hint=n.split()[0], delay=2.0, tries=10)
+        _launch(_APPS[n]); bring_to_front(exes=(), title_hint=n.split()[0], delay=2.0, tries=10)
         return f"{n} lancé."
     import re
     m = re.search(r"^(.+?) (?:sur|avec|dans|via) (youtube music|yt music|youtube|spotify|deezer)$", n)
@@ -269,8 +299,8 @@ def open_app(name: str) -> str:
     if not target:
         # 4. fenêtre déjà ouverte (onglet actif, document…), 5. favori du navigateur
         return switch_window(n) or open_bookmark(n) or f"Application « {name} » introuvable."
-    os.startfile(target)
-    if not str(target).startswith("steam://"):
+    _launch(target)
+    if not str(target).startswith(("steam://", "com.epicgames")):
         bring_to_front(exes=(), title_hint=key.split()[0], delay=2.0, tries=10)
     return f"{key} lancé."
 
@@ -616,9 +646,12 @@ def open_folder(name: str, cfg=None) -> str:
              "téléchargements": "Downloads", "musique": "Music", "images": "Pictures", "vidéos": "Videos",
              "videos": "Videos", "photos": "Pictures"}
     sub = known.get(name.lower().strip())
-    if sub and (Path.home() / sub).exists():
-        os.startfile(str(Path.home() / sub)); bring_to_front(exes=("explorer.exe",), delay=0.8)
-        return f"Dossier {name} ouvert."
+    if sub:
+        from . import config as _c
+        real = Path(_c.known_folder(sub))
+        if real.exists():
+            os.startfile(str(real)); bring_to_front(exes=("explorer.exe",), delay=0.8)
+            return f"Dossier {name} ouvert."
     from . import config as _c
     hits = _search(name, cfg or _c.load(), dirs_only=True, limit=1)
     if hits:
@@ -628,7 +661,8 @@ def open_folder(name: str, cfg=None) -> str:
 
 
 def organize_downloads(cfg) -> str:
-    dl = Path.home() / "Downloads"
+    from . import config as _c
+    dl = Path(_c.known_folder("Downloads"))
     groups = {"Images": {".jpg", ".jpeg", ".png", ".gif", ".webp", ".heic"},
               "Documents": {".pdf", ".docx", ".doc", ".xlsx", ".pptx", ".txt", ".csv"},
               "Musique": {".mp3", ".wav", ".flac", ".m4a"}, "Vidéos": {".mp4", ".mkv", ".mov", ".avi"},

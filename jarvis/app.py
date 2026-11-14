@@ -81,8 +81,13 @@ class Jarvis:
 
     # ----- déclenchement manuel -----
     def listen_now(self):
+        """Clic sur l'orbe / Ctrl+Alt+J : coupe Jarvis s'il parle, sinon l'écoute."""
         v = getattr(self, "voice", None)
-        if v and not v.speaking.is_set():
+        if not v:
+            return
+        if v.speaking.is_set():
+            v.stop_speech.set()
+        else:
             v.trigger.set()
 
     def hotkey_thread(self):
@@ -156,17 +161,30 @@ class Jarvis:
         hk = self.cfg.get("hotkey", "ctrl+alt+j").upper()
         self.say(f"Systèmes en ligne. À votre service, {self.cfg['user_name']}.")
         self.hud.notify(f"Dites « Hey Jarvis », appuyez sur {hk} ou cliquez sur l'orbe", 10)
-        fails, announced = 0, False
+        fails, announced, follow_up = 0, False, False
         while self.running:
             try:
                 if self.cfg.get("pause_when_locked", True) and session_locked():
                     import time as _t; _t.sleep(2); continue  # personne ne doit commander un PC verrouillé
-                how = self.voice.wait_for_wake()
+                if follow_up:  # mode conversation : on écoute la suite sans « Hey Jarvis »
+                    how = "suite"
+                    self.voice.preroll = []; self.voice.needs_verify = False
+                else:
+                    how = self.voice.wait_for_wake()
                 score = self.voice.last_score
                 log.info("réveil: %s (score %.2f)", how, score)
+                follow_up = False
+                ducked = self._duck() if self.cfg.get("duck_music", True) else False
                 self.voice.beep()
                 self.hud.set("listening", 0, "")
-                text = self.voice.listen()
+                try:
+                    text = self.voice.listen(start_timeout=4.0 if how == "suite" else 5.0)
+                finally:
+                    if ducked and not getattr(self, "_keep_paused", False):
+                        self._unduck()
+                if how == "suite" and len(text) < 2:
+                    self.hud.set("idle")
+                    continue
                 fails, announced = 0, False
                 if how == "wake" and self.voice.needs_verify:
                     from .router import looks_like_command
@@ -185,6 +203,10 @@ class Jarvis:
                 reply = route(text)  # commandes courantes : instantané, 0 token
                 if reply is None:
                     reply = self.brain.ask(text)
+                    # une question ou une discussion appelle souvent une suite : on réécoute brièvement
+                    follow_up = self.cfg.get("conversation_mode", True) and (
+                        reply.rstrip().endswith("?") or not any(k in reply.lower() for k in (
+                            "lancé", "ouvert", "fermé", "réglé", "lecture", "pause", "minuteur")))
                 else:
                     log.info("routeur local")
                 self.say(reply)
@@ -208,6 +230,43 @@ class Jarvis:
                 if not audio:
                     self.hud.notify(f"Erreur : {msg[:80]}", 8)
                 _t.sleep(min(60, 2 ** min(fails, 6)))  # 2, 4, 8… 60 s : jamais de boucle folle
+
+    def _rollback(self):
+        from . import updater
+        if not messagebox.askyesno("J.A.R.V.I.S.", "Revenir à la version précédente de Jarvis ?"):
+            return
+        if updater.rollback():
+            self.running = False; self.root.destroy(); os._exit(0)
+        messagebox.showinfo("J.A.R.V.I.S.", "Aucune version précédente disponible.")
+
+    def _uninstall(self):
+        from . import updater
+        if not messagebox.askyesno("J.A.R.V.I.S.", "Désinstaller Jarvis ?\n\nSeront supprimés : le programme, vos "
+                                   "réglages (clés comprises), le journal, le démarrage automatique et les raccourcis."):
+            return
+        updater.uninstall()
+        self.running = False; self.root.destroy(); os._exit(0)
+
+    # ----- musique baissée pendant l'écoute -----
+    def _duck(self) -> bool:
+        try:
+            from . import media
+            if any(p for _, _, _, p, _ in media.sessions()):
+                return media.pause()
+        except Exception:
+            pass
+        return False
+
+    def _unduck(self):
+        def run():
+            import time as _t
+            _t.sleep(0.3)
+            try:
+                from . import media
+                media.play()
+            except Exception:
+                pass
+        threading.Thread(target=run, daemon=True).start()
 
     # ----- icône système -----
     def tray(self):
@@ -250,6 +309,10 @@ class Jarvis:
             pystray.MenuItem("Rechercher une mise à jour",
                              lambda i, it: threading.Thread(target=self.check_update, args=(True,), daemon=True).start()),
             pystray.MenuItem("Réglages…", settings),
+            pystray.MenuItem("Revenir à la version précédente", lambda i, it: self.root.after(0, self._rollback)),
+            pystray.MenuItem("Désinstaller Jarvis…", lambda i, it: self.root.after(0, self._uninstall)),
+            pystray.MenuItem("Mes macros vocales…", lambda i, it: (__import__("jarvis.macros", fromlist=["load"]).load(),
+                                                                os.startfile(str(config.APP_DIR / "macros.json")))),
             pystray.MenuItem("Journal", logs),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Quitter", quit_),
@@ -361,16 +424,23 @@ def selftest() -> int:
         import numpy as np
         return f"score silence={max(m.predict(np.zeros(1280, dtype=np.int16)).values()):.3f}"
     step("openwakeword hey_jarvis", oww)
+    step("chiffrement de la clé (DPAPI)", lambda: config._unprotect(config._protect("test")) == "test" or 1/0)
+    step("dossiers Windows réels", lambda: config.known_folder("Documents"))
     step("contrôle média Windows (winrt)", lambda: f"{len(__import__('jarvis.media', fromlist=['sessions']).sessions())} session(s)")
-    step("modules", lambda: [__import__(f"jarvis.{m}") for m in ("actions", "brain", "router", "settings", "updater", "hud", "voice", "util", "media", "vision", "weather")] and "ok")
+    step("modules", lambda: [__import__(f"jarvis.{m}") for m in ("actions", "brain", "router", "settings", "updater", "hud", "voice", "util", "media", "vision", "weather", "macros")] and "ok")
     step("routeur", lambda: __import__("jarvis.router", fromlist=["route"]).route("raconte une blague") is None or 1/0)
+    offline = "--offline" in sys.argv
     try:  # test réseau réel (informatif, ne bloque pas la publication)
+        if offline:
+            raise RuntimeError("hors ligne")
         from .weather import weather
         out.append("INFO météo Nice demain : " + weather("Nice", "demain"))
         out.append("INFO météo position auto : " + weather("", "aujourd'hui"))
     except Exception as e:
         out.append(f"WARN météo : {e!r}")
     try:
+        if offline:
+            raise RuntimeError("hors ligne")
         from . import actions
         for q in ("nahar pnl", "naha pnl", "au dd pnl", "alors on dance stromae"):
             cq = actions.correct_query(q)

@@ -123,6 +123,25 @@ class Wizard:
         self.key_status = tk.Label(f, text="", fg=GREY, bg=BG, font=("Segoe UI", 9), anchor="w")
         self.key_status.pack(fill="x")
 
+        label("1 bis · CLÉS DE SECOURS (facultatif) — si Groq est saturé, Jarvis passe sur celles-ci")
+        self.extra = {}
+        for k, nm, link in (("gemini_api_key", "Gemini", "https://aistudio.google.com/apikey"),
+                            ("openrouter_api_key", "OpenRouter", "https://openrouter.ai/settings/keys")):
+            r = tk.Frame(f, bg=BG); r.pack(fill="x", pady=(2, 0))
+            tk.Label(r, text=nm, width=11, anchor="w", fg=WHITE, bg=BG, font=("Segoe UI", 10)).pack(side="left")
+            e = tk.Entry(r, bg=CARD, fg=WHITE, insertbackground=CYAN, relief="flat", font=("Segoe UI", 10),
+                         highlightthickness=1, highlightbackground="#12324A", highlightcolor=CYAN, show="•")
+            e.insert(0, cfg.get(k, "")); e.pack(side="left", fill="x", expand=True, ipady=4)
+            self._btn(r, "Obtenir", (lambda u=link: webbrowser.open(u)), GOLD).pack(side="left", padx=(6, 0))
+            self.extra[k] = e
+
+        label("1 ter · LANGUE")
+        self.langs = [("fr", "Français"), ("pt", "Português"), ("en", "English")]
+        self.lang = ttk.Combobox(f, values=[n for _, n in self.langs], state="readonly", style="J.TCombobox",
+                                 font=("Segoe UI", 10))
+        self.lang.current(next((i for i, (c, _) in enumerate(self.langs) if c == cfg.get("language", "fr")), 0))
+        self.lang.pack(fill="x", ipady=4)
+
         label("2 · COMMENT DOIS-JE VOUS APPELER ?")
         self.name = entry(cfg.get("user_name", "Monsieur"))
 
@@ -168,8 +187,12 @@ class Wizard:
         label("6 · OPTIONS")
         self.autostart = tk.BooleanVar(value=cfg.get("_autostart", True))
         self.orb = tk.BooleanVar(value=cfg.get("show_idle_orb", True))
+        self.conv = tk.BooleanVar(value=cfg.get("conversation_mode", True))
+        self.duck = tk.BooleanVar(value=cfg.get("duck_music", True))
         for var, txt in ((self.autostart, "Lancer Jarvis au démarrage de Windows (en arrière-plan)"),
-                         (self.orb, "Afficher l'orbe de veille en bas à droite")):
+                         (self.orb, "Afficher l'orbe de veille en bas à droite"),
+                         (self.conv, "Mode conversation : après une réponse, écouter la suite sans « Hey Jarvis »"),
+                         (self.duck, "Mettre la musique en pause pendant que Jarvis m'écoute")):
             tk.Checkbutton(f, text=txt, variable=var, bg=BG, fg=WHITE, selectcolor=CARD, activebackground=BG,
                            activeforeground=WHITE, font=("Segoe UI", 10), anchor="w").pack(fill="x")
         srow = tk.Frame(f, bg=BG); srow.pack(fill="x", pady=(4, 0))
@@ -334,7 +357,7 @@ class Wizard:
 
     def save(self):
         if not self.key.get().strip():
-            self.key_status.config(text="La clé est nécessaire.", fg=RED)
+            self.key_status.config(text="La clé Groq est nécessaire (elle sert aussi à comprendre votre voix).", fg=RED)
             return
         self.cfg.update(groq_api_key=self.key.get().strip(), user_name=self.name.get().strip() or "Monsieur",
                         input_device=self.device(), show_idle_orb=self.orb.get(),
@@ -342,6 +365,9 @@ class Wizard:
                         voice=self.voices[max(0, self.voice.current())][0],
                         home_city=self.city.get().strip(),
                         log_utterances=self.logu.get(), pause_when_locked=self.lockp.get(),
+                        conversation_mode=self.conv.get(), duck_music=self.duck.get(),
+                        language=self.langs[max(0, self.lang.current())][0],
+                        **{k: e.get().strip() for k, e in self.extra.items()},
                         wake_threshold=round(0.75 - self.sens.get() * 0.06, 2), _autostart=self.autostart.get())
         config.save(self.cfg)
         if self.stream:

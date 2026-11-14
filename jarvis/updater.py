@@ -40,9 +40,12 @@ def check():
         tag = d.get("tag_name", "")
         if not tag or _v(tag) <= _v(__version__):
             return None
-        for a in d.get("assets", []):
-            if a["name"].lower().endswith(".zip"):
-                return tag, a["browser_download_url"], (d.get("body") or "")[:400]
+        zips = [a for a in d.get("assets", []) if a["name"].lower().endswith(".zip")]
+        sums = [a for a in d.get("assets", []) if a["name"].lower().endswith(".sha256")]
+        if zips:
+            url = zips[0]["browser_download_url"]
+            check.sha_url = sums[0]["browser_download_url"] if sums else None
+            return tag, url, (d.get("body") or "")[:400]
     except Exception:
         pass
     return None
@@ -65,6 +68,17 @@ def install(url: str, progress=lambda p: None) -> bool:
                 f.write(chunk)
                 done += len(chunk)
                 progress(done / total)
+    # contrôle d'intégrité : le fichier reçu doit être exactement celui publié
+    sha_url = getattr(check, "sha_url", None)
+    if sha_url:
+        import hashlib
+        want = requests.get(sha_url, timeout=15).text.split()[0].strip().lower()
+        h = hashlib.sha256()
+        with open(zpath, "rb") as f:
+            for chunk in iter(lambda: f.read(1 << 20), b""):
+                h.update(chunk)
+        if h.hexdigest() != want:
+            raise RuntimeError("fichier de mise à jour corrompu ou modifié (somme SHA-256 différente) — annulé")
     with zipfile.ZipFile(zpath) as z:
         z.extractall(tmp / "new")
     new = tmp / "new"
@@ -107,6 +121,21 @@ def apply_update(src: str, dst: str, pid: str):
     subprocess.run(["taskkill", "/IM", "Jarvis.exe", "/F", "/FI", f"PID ne {os.getpid()}"],
                    capture_output=True, creationflags=0x08000000)
     time.sleep(1.5)
+    # 1. le nouveau Jarvis se teste lui-même AVANT de remplacer quoi que ce soit
+    t = subprocess.run([str(src / "Jarvis.exe"), "--selftest", "--offline"], capture_output=True, timeout=120)
+    if t.returncode != 0:
+        _log(f"auto-test de la nouvelle version ÉCHOUÉ (code {t.returncode}) : mise à jour annulée")
+        subprocess.Popen([str(dst / "Jarvis.exe")], cwd=str(dst), creationflags=0x00000008, close_fds=True)
+        return False
+    # 2. sauvegarde de la version actuelle (retour arrière possible)
+    backup = dst.parent / (dst.name + ".prev")
+    try:
+        if backup.exists():
+            shutil.rmtree(backup, ignore_errors=True)
+        shutil.copytree(dst, backup)
+    except Exception as e:
+        _log(f"sauvegarde impossible : {e}")
+        backup = None
     last = None
     for attempt in range(15):
         try:
@@ -119,9 +148,52 @@ def apply_update(src: str, dst: str, pid: str):
             _log(f"essai {attempt + 1} : {e}")
             time.sleep(2)
     _log(f"ÉCHEC : {last}")
+    if backup and backup.exists():  # 3. retour à la version précédente
+        try:
+            shutil.copytree(backup, dst, dirs_exist_ok=True)
+            _log("version précédente restaurée")
+            subprocess.Popen([str(dst / "Jarvis.exe")], cwd=str(dst), creationflags=0x00000008, close_fds=True)
+        except Exception as e:
+            _log(f"restauration impossible : {e}")
     import tkinter as tk
     from tkinter import messagebox
     r = tk.Tk(); r.withdraw()
     messagebox.showerror("J.A.R.V.I.S.", f"La mise à jour n'a pas pu remplacer les fichiers :\n{last}\n\n"
                          f"Dossier : {dst}\nJournal : {LOG}")
     return False
+
+
+def rollback() -> bool:
+    """Revient à la version précédente (menu « Revenir à la version précédente »)."""
+    import shutil
+    if not getattr(sys, "frozen", False):
+        return False
+    dst = Path(sys.executable).parent
+    backup = dst.parent / (dst.name + ".prev")
+    if not (backup / "Jarvis.exe").exists():
+        return False
+    tmp = Path(tempfile.mkdtemp(prefix="jarvis_upd_"))
+    shutil.copytree(backup, tmp / "Jarvis")
+    args = [str(tmp / "Jarvis" / "Jarvis.exe"), "--apply-update", str(tmp / "Jarvis"), str(dst), str(os.getpid())]
+    subprocess.Popen(args, creationflags=0x00000008 | 0x00000200 | 0x08000000, close_fds=True)
+    return True
+
+
+def uninstall():
+    """Désinstallation : démarrage auto, raccourcis, réglages et programme."""
+    import shutil
+    appdata = Path(os.environ.get("APPDATA", ""))
+    for lnk in (appdata / r"Microsoft\Windows\Start Menu\Programs\Startup\Jarvis.lnk",
+                appdata / r"Microsoft\Windows\Start Menu\Programs\Jarvis.lnk",
+                Path.home() / "Desktop" / "Jarvis.lnk"):
+        try:
+            lnk.unlink()
+        except OSError:
+            pass
+    shutil.rmtree(appdata / "Jarvis", ignore_errors=True)
+    if getattr(sys, "frozen", False):
+        app = Path(sys.executable).parent
+        bat = Path(tempfile.gettempdir()) / "jarvis_uninstall.bat"
+        bat.write_text(f'@echo off\r\ntimeout /t 3 /nobreak >nul\r\nrmdir /s /q "{app}"\r\n'
+                       f'rmdir /s /q "{app}.prev"\r\ndel "%~f0"\r\n', encoding="mbcs", errors="ignore")
+        subprocess.Popen(["cmd", "/c", str(bat)], creationflags=0x08000000 | 0x00000008, close_fds=True)
