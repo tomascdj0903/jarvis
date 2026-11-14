@@ -223,14 +223,62 @@ UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.3
       "Accept-Language": "fr-FR,fr;q=0.9"}
 
 
+def _norm_txt(t):
+    import re, unicodedata
+    t = unicodedata.normalize("NFD", t.lower())
+    return re.sub(r"[^a-z0-9 ]", " ", "".join(c for c in t if unicodedata.category(c) != "Mn"))
+
+
+def correct_query(query: str) -> str:
+    """Corrige l'orthographe comme la barre de recherche YouTube (« nahar pnl » -> « naha pnl »)."""
+    import requests
+    try:
+        r = requests.get("https://suggestqueries.google.com/complete/search", timeout=5, headers=UA,
+                         params={"client": "firefox", "ds": "yt", "hl": "fr", "q": query}).json()
+        sug = r[1] if len(r) > 1 else []
+        if sug:
+            return sug[0]
+    except Exception:
+        pass
+    return query
+
+
 def _youtube_id(query: str):
-    import re
-    import urllib.parse
+    """Meilleure vidéo pour la requête : on compare les titres au lieu de prendre le 1er résultat (pub, mix…)."""
+    import json, re, urllib.parse
     import requests
     html = requests.get("https://www.youtube.com/results?search_query=" + urllib.parse.quote(query),
                         headers=UA, timeout=8).text
-    m = re.search(r'"videoId":"([\w-]{11})"', html)
-    return m.group(1) if m else None
+    m = re.search(r"var ytInitialData = (\{.*?\});</script>", html)
+    cands = []
+    if m:
+        def walk(o):
+            if isinstance(o, dict):
+                if "videoRenderer" in o:
+                    v = o["videoRenderer"]
+                    title = "".join(r.get("text", "") for r in v.get("title", {}).get("runs", []))
+                    owner = "".join(r.get("text", "") for r in v.get("ownerText", {}).get("runs", []))
+                    if v.get("videoId"):
+                        cands.append((v["videoId"], title, owner))
+                for x in o.values():
+                    walk(x)
+            elif isinstance(o, list):
+                for x in o:
+                    walk(x)
+        try:
+            walk(json.loads(m.group(1)))
+        except Exception:
+            pass
+    if not cands:
+        f = re.search(r'"videoId":"([\w-]{11})"', html)
+        return f.group(1) if f else None
+    words = [w for w in _norm_txt(query).split() if w not in ("audio", "clip", "officiel", "de", "la", "le")]
+
+    def score(c):
+        t = _norm_txt(c[1] + " " + c[2]).split()
+        hit = sum(1 for w in words if w in t)
+        return (hit, -cands.index(c))
+    return max(cands[:12], key=score)[0]
 
 
 def _deezer_track(query: str):
@@ -248,6 +296,7 @@ def play_music(query: str, service: str = "youtube") -> str:
     service = (service or "youtube").lower()
     try:
         if service in ("youtube", "youtube_music"):
+            query = correct_query(query)
             vid = _youtube_id(query + (" audio" if service == "youtube_music" else ""))
             if not vid:
                 return f"Rien trouvé pour « {query} »."
@@ -276,25 +325,79 @@ def play_music(query: str, service: str = "youtube") -> str:
         return f"Impossible de lancer la musique : {e}"
 
 
-def _autoplay(after=3, keywords=None):
-    """Lance la lecture si le lecteur s'est ouvert en pause (blocage de lecture auto du navigateur)."""
+def _is_playing() -> bool:
     try:
         from . import media
-        if keywords:
-            media.ensure_playing(keywords=keywords, after=after)
-        else:
-            media.ensure_playing(after=after)
+        return any(p for _, _, _, p, _ in media.sessions())
     except Exception:
-        pass
+        return False
+
+
+def _page_key(title_low: str):
+    """Touche lecture/pause propre au site affiché dans le navigateur."""
+    if "youtube music" in title_low:
+        return 0x20  # Espace
+    if "youtube" in title_low:
+        return 0x4B  # K
+    if "deezer" in title_low:
+        return 0x20
+    return None
+
+
+def press_play_in_browser() -> bool:
+    """Chrome bloque la lecture auto : une vraie frappe clavier dans la page compte comme un geste de
+    l'utilisateur et débloque la lecture. Uniquement si la fenêtre au premier plan est le bon site."""
+    hwnd = user32.GetForegroundWindow()
+    t = ctypes.create_unicode_buffer(512); user32.GetWindowTextW(hwnd, t, 512)
+    key = _page_key(t.value.lower())
+    if key is None:
+        return False
+    user32.keybd_event(key, 0, 0, 0); user32.keybd_event(key, 0, 2, 0)
+    return True
+
+
+def _autoplay(after=3, keywords=None):
+    """Après ouverture : premier plan, puis lecture si rien ne joue (vérifie ensuite que ça joue)."""
+    import threading
+
+    def run():
+        time.sleep(after)
+        for _ in range(6):
+            if _is_playing():
+                return
+            try:
+                from . import media
+                media.ensure_playing(timeout=1.5) if keywords is None else media.ensure_playing(keywords=keywords, timeout=1.5)
+            except Exception:
+                pass
+            time.sleep(1.6)
+            if _is_playing():
+                return
+            wins = [w for w in _windows() if w[1] in BROWSERS]
+            if wins:
+                _force_front(wins[0][0]); time.sleep(0.4)
+                press_play_in_browser()
+            time.sleep(1.5)
+    threading.Thread(target=run, daemon=True).start()
 
 
 def resume() -> str:
+    if _is_playing():
+        return "C'est déjà en lecture."
     try:
         from . import media
         if media.play():
-            return "Lecture lancée."
+            time.sleep(0.8)
+            if _is_playing():
+                return "Lecture lancée."
     except Exception:
         pass
+    # pas de session média (page bloquée par la lecture auto) : frappe dans l'onglet du navigateur
+    wins = [w for w in _windows() if w[1] in BROWSERS and _page_key(w[2].lower())]
+    if wins:
+        _force_front(wins[0][0]); time.sleep(0.4)
+        press_play_in_browser()
+        return "Lecture lancée."
     _press(VK["play_pause"])
     return "Lecture lancée."
 
