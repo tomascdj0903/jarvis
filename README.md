@@ -1,6 +1,11 @@
 # J.A.R.V.I.S. — assistant vocal Windows
 
-Dis **« Hey Jarvis »** (ou « OK Jarvis »), attends le bip, puis donne ta commande.
+Dis **« Hey Jarvis »** (prononcé « hé djarvis »), attends le bip, puis donne ta commande.
+Autres façons de le réveiller : **Ctrl + Alt + J**, ou **clic sur l'orbe** en bas à droite.
+
+L'**orbe de veille** reste visible en bas à droite : elle respire doucement et grossit quand
+le micro capte du son. Si elle ne bouge pas quand tu parles, c'est le micro (voir plus bas).
+Les erreurs s'affichent dans une bulle à côté de l'orbe.
 
 ## Télécharger (le plus simple, sans Python)
 1. Va dans **Releases** → télécharge `Jarvis-Windows.zip`.
@@ -34,7 +39,7 @@ Micro en pause · Lancer au démarrage · Réindexer les applications · Réglag
 ## Réglages — `%APPDATA%\Jarvis\config.json`
 - `user_name` : comment il t'appelle
 - `voice` : voix (`fr-FR-HenriNeural`, `fr-FR-DeniseNeural`, `fr-FR-RemyMultilingualNeural`…)
-- `wake_threshold` : sensibilité de « Hey Jarvis » (0.3 = plus sensible, 0.7 = moins de faux réveils)
+- `wake_threshold` : sensibilité de « Hey Jarvis » (0.25 = très sensible, 0.35 par défaut, 0.6 = moins de faux réveils)
 - `allowed_folders` : dossiers où Jarvis peut chercher/ouvrir des fichiers
 - `llm_model` : modèle Groq
 

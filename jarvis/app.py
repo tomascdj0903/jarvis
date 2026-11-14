@@ -72,9 +72,31 @@ class Jarvis:
             self.root.iconbitmap(str(config.resource("assets/jarvis.ico")))
         except Exception:
             pass
-        self.hud = HUD(self.root)
+        self.hud = HUD(self.root, on_click=self.listen_now, show_idle=self.cfg.get("show_idle_orb", True))
         self.ready = threading.Event()
         self.running = True
+
+    # ----- déclenchement manuel -----
+    def listen_now(self):
+        v = getattr(self, "voice", None)
+        if v and not v.speaking.is_set():
+            v.trigger.set()
+
+    def hotkey_thread(self):
+        """Raccourci global (Ctrl+Alt+J par défaut) via RegisterHotKey."""
+        import ctypes
+        from ctypes import wintypes
+        mods = {"alt": 1, "ctrl": 2, "shift": 4, "win": 8}
+        parts = self.cfg.get("hotkey", "ctrl+alt+j").lower().split("+")
+        m = sum(mods.get(x, 0) for x in parts[:-1])
+        key = ord(parts[-1].upper()) if len(parts[-1]) == 1 else 0x20
+        if not ctypes.windll.user32.RegisterHotKey(None, 1, m | 0x4000, key):
+            log.warning("raccourci %s indisponible", self.cfg.get("hotkey"))
+            return
+        msg = wintypes.MSG()
+        while ctypes.windll.user32.GetMessageW(ctypes.byref(msg), None, 0, 0) != 0:
+            if msg.message == 0x0312:
+                self.listen_now()
 
     # ----- première configuration -----
     def ensure_key(self):
@@ -119,22 +141,28 @@ class Jarvis:
             self.voice = Voice(self.cfg, self.on_state)
         except Exception as e:
             log.exception("voice init")
+            self.hud.notify("Micro ou détecteur indisponible — voir le Journal", 30)
             self.root.after(0, lambda: messagebox.showerror("J.A.R.V.I.S.", f"Micro ou détecteur indisponible :\n{e}"))
             self.ready.set()
             return
         self.brain = Brain(self.cfg, self.say, self.confirm)
         threading.Thread(target=actions.scan_apps, daemon=True).start()
         self.ready.set()
+        threading.Thread(target=self.hotkey_thread, daemon=True).start()
+        hk = self.cfg.get("hotkey", "ctrl+alt+j").upper()
         self.say(f"Systèmes en ligne. À votre service, {self.cfg['user_name']}.")
+        self.hud.notify(f"Dites « Hey Jarvis », appuyez sur {hk} ou cliquez sur l'orbe", 10)
         while self.running:
             try:
-                self.voice.wait_for_wake()
+                how = self.voice.wait_for_wake()
+                log.info("réveil: %s (score %.2f)", how, self.voice.last_score)
                 self.voice.beep()
                 self.hud.set("listening", 0, "")
                 text = self.voice.listen()
                 log.info("USER: %s", text)
                 if len(text) < 2:
                     self.hud.set("idle")
+                    self.hud.notify("Je n'ai rien entendu.", 3)
                     continue
                 self.hud.set("thinking", 0, text)
                 reply = self.brain.ask(text)
@@ -149,6 +177,7 @@ class Jarvis:
                 else:
                     self.say("Désolé, un problème est survenu.")
                 self.hud.set("idle")
+                self.hud.notify(f"Erreur : {msg[:80]}", 8)
 
     # ----- icône système -----
     def tray(self):
@@ -167,6 +196,11 @@ class Jarvis:
         def autostart(icon, item):
             set_autostart(not STARTUP_LNK.exists())
 
+        def toggle_orb(icon, item):
+            self.hud.show_idle = not self.hud.show_idle
+            self.cfg["show_idle_orb"] = self.hud.show_idle
+            config.save(self.cfg)
+
         def rescan(icon, item):
             threading.Thread(target=actions.scan_apps, daemon=True).start()
 
@@ -177,6 +211,8 @@ class Jarvis:
 
         menu = pystray.Menu(
             pystray.MenuItem("J.A.R.V.I.S. — dites « Hey Jarvis »", None, enabled=False),
+            pystray.MenuItem("Écouter maintenant", lambda i, it: self.listen_now(), default=True),
+            pystray.MenuItem("Afficher l'orbe de veille", toggle_orb, checked=lambda i: self.hud.show_idle),
             pystray.MenuItem("Micro en pause", pause,
                              checked=lambda i: getattr(getattr(self, "voice", None), "paused", False)),
             pystray.MenuItem("Lancer au démarrage", autostart, checked=lambda i: STARTUP_LNK.exists()),

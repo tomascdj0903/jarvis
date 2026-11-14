@@ -23,6 +23,8 @@ class Voice:
         self.on_state = on_state
         self.paused = False
         self.speaking = threading.Event()
+        self.trigger = threading.Event()  # écoute forcée (raccourci / clic sur l'orbe)
+        self.last_score = 0.0
         from openwakeword.model import Model
         import openwakeword.utils
         try:
@@ -35,14 +37,25 @@ class Voice:
     def wait_for_wake(self):
         """Bloque jusqu'à « Hey/OK Jarvis »."""
         self.oww.reset()
+        self.trigger.clear()
+        n = 0
         with sd.InputStream(samplerate=RATE, channels=1, dtype="int16", blocksize=CHUNK) as st:
             while True:
                 data, _ = st.read(CHUNK)
+                if self.trigger.is_set():
+                    self.trigger.clear()
+                    return "manual"
                 if self.paused or self.speaking.is_set():
                     continue
                 scores = self.oww.predict(data[:, 0])
-                if max(scores.values()) >= self.cfg["wake_threshold"]:
-                    return
+                score = max(scores.values())
+                self.last_score = max(self.last_score * 0.9, score)
+                n += 1
+                if n % 3 == 0:  # ~4 fois/s : l'orbe de veille suit le micro
+                    lvl = float(np.sqrt(np.mean(data.astype(np.float32) ** 2)))
+                    self.on_state("idle", min(1.0, lvl / 3000))
+                if score >= self.cfg["wake_threshold"]:
+                    return "wake"
 
     def record_command(self, max_s=8.0, silence_s=1.0) -> bytes:
         """Enregistre jusqu'à un silence ; renvoie un WAV."""

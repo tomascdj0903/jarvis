@@ -23,7 +23,9 @@ DEFAULTS = {
     "voice": "fr-FR-HenriNeural",
     "language": "fr",
     "user_name": "Monsieur",
-    "wake_threshold": 0.5,
+    "wake_threshold": 0.35,
+    "show_idle_orb": True,
+    "hotkey": "ctrl+alt+j",
     "allowed_folders": [
         str(Path.home() / "Desktop"),
         str(Path.home() / "Documents"),
@@ -43,6 +45,8 @@ def load() -> dict:
             cfg.update(json.loads(CONFIG_FILE.read_text(encoding="utf-8")))
         except Exception:
             pass
+    if cfg.get("wake_threshold") == 0.5:  # migration v1.0 -> plus sensible
+        cfg["wake_threshold"] = 0.35
     return cfg
 
 
