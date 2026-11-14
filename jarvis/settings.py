@@ -61,13 +61,15 @@ class Wizard:
         w = self.w = tk.Toplevel(root)
         w.title("J.A.R.V.I.S. — " + ("Bienvenue" if first_run else "Réglages"))
         w.configure(bg=BG)
-        w.resizable(False, False)
+        w.resizable(True, True)
+        w.minsize(520, 420)
         try:
             w.iconbitmap(str(config.resource("assets/jarvis.ico")))
         except Exception:
             pass
-        W, H = 580, 900
-        w.geometry(f"{W}x{H}+{(w.winfo_screenwidth()-W)//2}+{(w.winfo_screenheight()-H)//2}")
+        W = 600
+        H = min(900, w.winfo_screenheight() - 100)  # jamais plus haut que l'écran
+        w.geometry(f"{W}x{H}+{(w.winfo_screenwidth()-W)//2}+{max(10, (w.winfo_screenheight()-H)//2 - 30)}")
         w.attributes("-topmost", True)
         style = ttk.Style(w)
         style.theme_use("clam")
@@ -80,7 +82,24 @@ class Wizard:
         tk.Label(w, text="Configuration" if not first_run else "Configurons votre assistant — 1 minute",
                  fg=CYAN, bg=BG, font=("Segoe UI", 10)).pack(pady=(0, 10))
 
-        f = tk.Frame(w, bg=BG); f.pack(fill="x", padx=28)
+        # barre du bas fixe : le bouton reste toujours visible
+        bar = tk.Frame(w, bg=CARD, highlightthickness=1, highlightbackground="#12324A")
+        bar.pack(side="bottom", fill="x")
+        self._btn(bar, "Terminer" if first_run else "Enregistrer", self.save, CYAN, big=True).pack(side="right", padx=16, pady=10)
+        self._btn(bar, "Annuler", self.close, GREY).pack(side="right", pady=10)
+        tk.Label(bar, text="Faites défiler pour tout voir · fenêtre agrandissable", fg=GREY, bg=CARD,
+                 font=("Segoe UI", 9)).pack(side="left", padx=16)
+        # zone de réglages défilante
+        holder = tk.Frame(w, bg=BG); holder.pack(fill="both", expand=True)
+        cv = tk.Canvas(holder, bg=BG, highlightthickness=0)
+        sb = tk.Scrollbar(holder, orient="vertical", command=cv.yview)
+        cv.configure(yscrollcommand=sb.set)
+        sb.pack(side="right", fill="y"); cv.pack(side="left", fill="both", expand=True)
+        f = tk.Frame(cv, bg=BG)
+        win = cv.create_window((28, 0), window=f, anchor="nw")
+        f.bind("<Configure>", lambda e: cv.configure(scrollregion=cv.bbox("all")))
+        cv.bind("<Configure>", lambda e: cv.itemconfigure(win, width=e.width - 56))
+        w.bind_all("<MouseWheel>", lambda e: cv.yview_scroll(int(-e.delta / 120), "units") if self.w.winfo_exists() else None)
 
         def label(t):
             tk.Label(f, text=t, fg=GREY, bg=BG, font=("Segoe UI Semibold", 9), anchor="w").pack(fill="x", pady=(10, 2))
@@ -158,7 +177,7 @@ class Wizard:
         self.diag = tk.Frame(f, bg=CARD); self.diag.pack(fill="x")
         threading.Thread(target=self.run_checks, daemon=True).start()
 
-        self._btn(w, "Terminer" if first_run else "Enregistrer", self.save, CYAN, big=True).pack(pady=18)
+        tk.Frame(f, bg=BG, height=20).pack()
         w.protocol("WM_DELETE_WINDOW", self.close)
         self.start_meter()
         self.draw_meter()
