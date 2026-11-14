@@ -69,7 +69,8 @@ class Jarvis:
         self.root = tk.Tk()
         self.root.withdraw()
         try:
-            self.root.iconbitmap(str(config.resource("assets/jarvis.ico")))
+            # default= : toutes les fenêtres (réglages, mise à jour, messages) prennent le logo Jarvis
+            self.root.iconbitmap(default=str(config.resource("assets/jarvis.ico")))
         except Exception:
             pass
         self.hud = HUD(self.root, on_click=self.listen_now, show_idle=self.cfg.get("show_idle_orb", True))
@@ -311,8 +312,21 @@ def single_instance() -> bool:
 
 
 def main():
+    if len(sys.argv) >= 5 and sys.argv[1] == "--apply-update":
+        from .updater import apply_update
+        apply_update(*sys.argv[2:5])
+        return
+    try:  # icône Jarvis dans la barre des tâches (au lieu de celle de Python)
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("Jarvis.Assistant")
+    except Exception:
+        pass
     if not single_instance():
         r = tk.Tk(); r.withdraw()
+        try:
+            r.iconbitmap(default=str(config.resource("assets/jarvis.ico")))
+        except Exception:
+            pass
         messagebox.showinfo("J.A.R.V.I.S.", "Jarvis tourne déjà en arrière-plan.\n"
                             "Dites « Hey Jarvis », Ctrl+Alt+J, ou clic droit sur l'icône près de l'horloge.")
         return

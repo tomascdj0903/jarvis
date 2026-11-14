@@ -59,27 +59,57 @@ def install(url: str, progress=lambda p: None) -> bool:
     inner = [p for p in new.iterdir() if p.is_dir()]
     if len(inner) == 1 and (inner[0] / "Jarvis.exe").exists():
         new = inner[0]
-    log = Path(os.environ.get("APPDATA", tempfile.gettempdir())) / "Jarvis" / "update.log"
-    ps1 = tmp / "update.ps1"
-    # PowerShell en UTF-8 avec BOM : gère les chemins avec accents
-    ps1.write_text(f"""
-$ErrorActionPreference = 'Continue'
-$log = '{log}'
-function L($m) {{ Add-Content -LiteralPath $log -Value ("$(Get-Date -f s) " + $m) }}
-L 'Mise a jour : attente de la fermeture de Jarvis (PID {os.getpid()})'
-try {{ Wait-Process -Id {os.getpid()} -Timeout 20 -ErrorAction SilentlyContinue }} catch {{}}
-Get-Process -Name Jarvis -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-Start-Sleep -Seconds 2
-$src = '{new}'; $dst = '{app_dir}'
-$ok = $false
-for ($i = 1; $i -le 10 -and -not $ok; $i++) {{
-    robocopy $src $dst /E /IS /IT /R:2 /W:1 /NFL /NDL /NJH /NJS | Out-Null
-    if ($LASTEXITCODE -lt 8) {{ $ok = $true }} else {{ L "Copie echouee (code $LASTEXITCODE), essai $i"; Start-Sleep -Seconds 2 }}
-}}
-if ($ok) {{ L 'Mise a jour installee.' }} else {{ L 'ECHEC de la mise a jour.' }}
-Start-Process -FilePath (Join-Path $dst 'Jarvis.exe')
-""", encoding="utf-8-sig")
-    subprocess.Popen(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden",
-                      "-File", str(ps1)], creationflags=0x08000000 | 0x00000008 | 0x00000200,
-                     close_fds=True)
+    # Le NOUVEAU Jarvis.exe (dans le dossier temporaire) fait lui-même le remplacement :
+    # plus de script PowerShell (souvent bloqué par l'antivirus), et le dossier cible n'est pas verrouillé.
+    flags = 0x00000008 | 0x00000200 | 0x08000000  # détaché, nouveau groupe, sans fenêtre
+    args = [str(new / "Jarvis.exe"), "--apply-update", str(new), str(app_dir), str(os.getpid())]
+    try:
+        subprocess.Popen(args, creationflags=flags | 0x01000000, close_fds=True)  # + sortie du job parent
+    except OSError:
+        subprocess.Popen(args, creationflags=flags, close_fds=True)
     return True
+
+
+LOG = Path(os.environ.get("APPDATA", tempfile.gettempdir())) / "Jarvis" / "update.log"
+
+
+def _log(msg):
+    import datetime
+    LOG.parent.mkdir(parents=True, exist_ok=True)
+    with open(LOG, "a", encoding="utf-8") as f:
+        f.write(f"{datetime.datetime.now():%Y-%m-%d %H:%M:%S} {msg}\n")
+
+
+def apply_update(src: str, dst: str, pid: str):
+    """Exécuté par le nouveau Jarvis.exe : attend la fermeture de l'ancien, copie, relance."""
+    import ctypes
+    import shutil
+    import time
+    src, dst = Path(src), Path(dst)
+    _log(f"application de la mise à jour {src} -> {dst}")
+    k32 = ctypes.windll.kernel32
+    h = k32.OpenProcess(0x00100000, False, int(pid))  # SYNCHRONIZE
+    if h:
+        k32.WaitForSingleObject(h, 20000)
+        k32.CloseHandle(h)
+    subprocess.run(["taskkill", "/IM", "Jarvis.exe", "/F", "/FI", f"PID ne {os.getpid()}"],
+                   capture_output=True, creationflags=0x08000000)
+    time.sleep(1.5)
+    last = None
+    for attempt in range(15):
+        try:
+            shutil.copytree(src, dst, dirs_exist_ok=True)
+            _log("mise à jour installée")
+            subprocess.Popen([str(dst / "Jarvis.exe")], cwd=str(dst), creationflags=0x00000008, close_fds=True)
+            return True
+        except Exception as e:
+            last = e
+            _log(f"essai {attempt + 1} : {e}")
+            time.sleep(2)
+    _log(f"ÉCHEC : {last}")
+    import tkinter as tk
+    from tkinter import messagebox
+    r = tk.Tk(); r.withdraw()
+    messagebox.showerror("J.A.R.V.I.S.", f"La mise à jour n'a pas pu remplacer les fichiers :\n{last}\n\n"
+                         f"Dossier : {dst}\nJournal : {LOG}")
+    return False
