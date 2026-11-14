@@ -99,6 +99,16 @@ def test_weather_routing():
         got.clear(); assert route(phrase) == "meteo", phrase; assert got[0] == want, (phrase, got)
 
 
+def test_exe_machine():
+    import struct, tempfile
+    from jarvis.updater import exe_machine
+    for mach, want in ((0x8664, "x64"), (0xAA64, "ARM64")):
+        f = tempfile.NamedTemporaryFile(delete=False, suffix=".exe")
+        data = bytearray(0x100); data[0x3C:0x40] = struct.pack("<I", 0x80); data[0x84:0x86] = struct.pack("<H", mach)
+        f.write(data); f.close()
+        assert exe_machine(f.name) == want
+
+
 def test_versions():
     from jarvis.updater import _v
     assert _v("v1.10.0") > _v("1.9.9") and _v("v1.3.3") == _v("1.3.3")
@@ -370,5 +380,5 @@ def test_phase3():
 
 
 if __name__ == "__main__":
-    test_router(); test_weather_routing(); test_versions(); test_brain_tool_loop(); test_open_app_real(); test_search_and_correct(); test_phase1(); test_injection_guard(); test_phase2(); test_phase3()
+    test_router(); test_weather_routing(); test_exe_machine(); test_versions(); test_brain_tool_loop(); test_open_app_real(); test_search_and_correct(); test_phase1(); test_injection_guard(); test_phase2(); test_phase3()
     print(f"TOUS LES TESTS OK ({len(CASES)} phrases)")

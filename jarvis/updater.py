@@ -30,6 +30,17 @@ def cleanup_temp():
             pass
 
 
+def exe_machine(path) -> str:
+    """Processeur visé par un .exe (en-tête PE) : « x64 », « ARM64 » ou « x86 »."""
+    import struct
+    with open(path, "rb") as f:
+        f.seek(0x3C)
+        pe = struct.unpack("<I", f.read(4))[0]
+        f.seek(pe + 4)
+        mach = struct.unpack("<H", f.read(2))[0]
+    return {0x8664: "x64", 0xAA64: "ARM64", 0x14C: "x86"}.get(mach, hex(mach))
+
+
 def native_arm64() -> bool:
     """Vrai si Windows tourne sur un processeur ARM64 (même si ce Jarvis est la version x64 émulée)."""
     try:
@@ -54,9 +65,10 @@ def check():
         if not tag or _v(tag) <= _v(__version__):
             return None
         assets = d.get("assets", [])
-        arm = native_arm64() and any(a["name"] == "Jarvis-Windows-ARM64.zip" for a in assets)
-        want = "Jarvis-Windows-ARM64.zip" if arm else "Jarvis-Windows.zip"
-        zips = [a for a in assets if a["name"] == want] or [a for a in assets if a["name"].lower().endswith(".zip")]
+        arm = native_arm64() and any(a["name"] == "Jarvis-Windows-ARM64.pkg" for a in assets)
+        want = "Jarvis-Windows-ARM64.pkg" if arm else "Jarvis-Windows.zip"
+        # nom EXACT : jamais la version d'un autre processeur
+        zips = [a for a in assets if a["name"] == want]
         sums = [a for a in assets if a["name"] == zips[0]["name"] + ".sha256"] if zips else []
         if zips:
             url = zips[0]["browser_download_url"]
@@ -101,6 +113,10 @@ def install(url: str, progress=lambda p: None) -> bool:
     inner = [p for p in new.iterdir() if p.is_dir()]
     if len(inner) == 1 and (inner[0] / "Jarvis.exe").exists():
         new = inner[0]
+    # sécurité : le .exe téléchargé doit pouvoir tourner sur CE processeur
+    m = exe_machine(new / "Jarvis.exe")
+    if m == "ARM64" and not native_arm64():
+        raise RuntimeError("la mise à jour reçue est pour processeur ARM (Snapdragon), pas pour ce PC — annulée")
     # Le NOUVEAU Jarvis.exe (dans le dossier temporaire) fait lui-même le remplacement :
     # plus de script PowerShell (souvent bloqué par l'antivirus), et le dossier cible n'est pas verrouillé.
     flags = 0x00000008 | 0x00000200 | 0x08000000  # détaché, nouveau groupe, sans fenêtre

@@ -129,12 +129,14 @@ jobs:
       - name: Archive ARM64
         shell: pwsh
         run: |
-          Compress-Archive -Path dist\Jarvis -DestinationPath Jarvis-Windows-ARM64.zip
-          (Get-FileHash Jarvis-Windows-ARM64.zip -Algorithm SHA256).Hash.ToLower() + "  Jarvis-Windows-ARM64.zip" | Out-File -Encoding ascii Jarvis-Windows-ARM64.zip.sha256
+          # extension .pkg (contenu zip) : les anciennes versions de Jarvis ne prennent que les .zip -> jamais l'ARM par erreur
+          Compress-Archive -Path dist\Jarvis -DestinationPath Jarvis-ARM64.zip
+          Rename-Item Jarvis-ARM64.zip Jarvis-Windows-ARM64.pkg
+          (Get-FileHash Jarvis-Windows-ARM64.pkg -Algorithm SHA256).Hash.ToLower() + "  Jarvis-Windows-ARM64.pkg" | Out-File -Encoding ascii Jarvis-Windows-ARM64.pkg.sha256
       - name: Ajouter à la release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.check.outputs.tag }}
           files: |
-            Jarvis-Windows-ARM64.zip
-            Jarvis-Windows-ARM64.zip.sha256
+            Jarvis-Windows-ARM64.pkg
+            Jarvis-Windows-ARM64.pkg.sha256
