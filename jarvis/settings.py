@@ -66,7 +66,7 @@ class Wizard:
             w.iconbitmap(str(config.resource("assets/jarvis.ico")))
         except Exception:
             pass
-        W, H = 560, 680
+        W, H = 560, 760
         w.geometry(f"{W}x{H}+{(w.winfo_screenwidth()-W)//2}+{(w.winfo_screenheight()-H)//2}")
         w.attributes("-topmost", True)
         style = ttk.Style(w)
@@ -115,7 +115,16 @@ class Wizard:
         self.mic.bind("<<ComboboxSelected>>", lambda e: self.start_meter())
         self.meter = tk.Canvas(f, height=10, bg="#12324A", highlightthickness=0); self.meter.pack(fill="x", pady=(6, 0))
 
-        label("4 · OPTIONS")
+        label("4 · MUSIQUE — où lancer « mets du Dua Lipa »")
+        self.services = [("youtube", "YouTube"), ("youtube_music", "YouTube Music"),
+                         ("spotify", "Spotify (appli)"), ("deezer", "Deezer")]
+        self.music = ttk.Combobox(f, values=[n for _, n in self.services], state="readonly",
+                                  style="J.TCombobox", font=("Segoe UI", 10))
+        self.music.current(next((k for k, (v, _) in enumerate(self.services)
+                                 if v == cfg.get("music_service", "youtube")), 0))
+        self.music.pack(fill="x", ipady=4)
+
+        label("5 · OPTIONS")
         self.autostart = tk.BooleanVar(value=cfg.get("_autostart", True))
         self.orb = tk.BooleanVar(value=cfg.get("show_idle_orb", True))
         for var, txt in ((self.autostart, "Lancer Jarvis au démarrage de Windows (en arrière-plan)"),
@@ -129,7 +138,7 @@ class Wizard:
         self.sens.set(round((0.75 - cfg.get("wake_threshold", 0.35)) / 0.06))
         self.sens.pack(side="right")
 
-        label("5 · VÉRIFICATION DU PC")
+        label("6 · VÉRIFICATION DU PC")
         self.diag = tk.Frame(f, bg=CARD); self.diag.pack(fill="x")
         threading.Thread(target=self.run_checks, daemon=True).start()
 
@@ -214,6 +223,7 @@ class Wizard:
             return
         self.cfg.update(groq_api_key=self.key.get().strip(), user_name=self.name.get().strip() or "Monsieur",
                         input_device=self.device(), show_idle_orb=self.orb.get(),
+                        music_service=self.services[max(0, self.music.current())][0],
                         wake_threshold=round(0.75 - self.sens.get() * 0.06, 2), _autostart=self.autostart.get())
         config.save(self.cfg)
         if self.stream:

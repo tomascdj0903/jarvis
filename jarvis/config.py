@@ -26,6 +26,7 @@ DEFAULTS = {
     "wake_threshold": 0.35,
     "show_idle_orb": True,
     "input_device": None,
+    "music_service": "youtube",
     "hotkey": "ctrl+alt+j",
     "allowed_folders": [
         str(Path.home() / "Desktop"),

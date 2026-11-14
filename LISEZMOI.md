@@ -13,8 +13,9 @@ Les erreurs s'affichent dans une bulle à côté de l'orbe.
 3. Les mises à jour sont proposées automatiquement au lancement (ou clic droit sur l'icône → « Rechercher une mise à jour »).
 
 ## Publier une mise à jour
-Change le numéro dans `jarvis/__init__.py` (ex. `1.0.1`) et pousse sur `main` : GitHub fabrique
-`Jarvis.exe` et publie la release ; les Jarvis installés la proposent au prochain lancement.
+Change le numéro dans `jarvis/__init__.py` (ex. `1.3.1`) et pousse sur `main`. C'est tout :
+GitHub fabrique `Jarvis.exe` et publie la release tout seul (au push, sinon dans les 15 minutes),
+puis chaque Jarvis installé la propose au lancement suivant.
 
 ## Installation depuis le code
 1. Installe **Python 3.11 (Windows x64)** depuis python.org — coche « Add Python to PATH ».
@@ -26,7 +27,7 @@ Change le numéro dans `jarvis/__init__.py` (ex. `1.0.1`) et pousse sur `main` :
 
 ## Exemples
 - « Lance Spotify » · « Change de musique » · « Pause » · « Monte le son »
-- « Mets du Dua Lipa » (ouvre la recherche Spotify)
+- « Mets du Dua Lipa », « Joue Stromae sur Spotify » — YouTube, YouTube Music, Spotify ou Deezer (au choix dans Réglages), sans compte Premium ni clé API
 - « Lance Brawlhalla » / « Ouvre Discord » · « Ferme Chrome »
 - « Ouvre mes téléchargements » · « Range mes téléchargements » · « Trouve mon fichier Volvo »
 - « Cherche la météo à Nice » · « Ouvre youtube.com »

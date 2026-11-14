@@ -1,17 +1,44 @@
 name: Build & Release Jarvis
 
-# Publie une release à chaque changement de version dans jarvis/__init__.py
+# Publication automatique : dès que la version dans jarvis/__init__.py n'a pas encore de release.
+# Vérifié à chaque push sur main ET toutes les 15 minutes (au cas où un push ne déclenche rien).
 on:
   push:
     branches: [main]
-    paths: ["jarvis/__init__.py"]
+  schedule:
+    - cron: "*/15 * * * *"
   workflow_dispatch:
 
 permissions:
   contents: write
 
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.v.outputs.tag }}
+      build: ${{ steps.v.outputs.build }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v=$(sed -E 's/.*"(.+)".*/\1/' jarvis/__init__.py)
+          echo "tag=v$v" >> "$GITHUB_OUTPUT"
+          if gh release view "v$v" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "build=false" >> "$GITHUB_OUTPUT"; echo "v$v déjà publiée"
+          else
+            echo "build=true" >> "$GITHUB_OUTPUT"; echo "v$v à publier"
+          fi
+
   build:
+    needs: check
+    if: needs.check.outputs.build == 'true'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,12 +46,6 @@ jobs:
         with:
           python-version: "3.11"
           architecture: x64
-      - name: Lire la version
-        id: ver
-        shell: pwsh
-        run: |
-          $v = ((Get-Content jarvis/__init__.py -Raw) -split '"')[1]
-          "tag=v$v" >> $env:GITHUB_OUTPUT
       - name: Dépendances
         run: |
           python -m pip install --upgrade pip
@@ -42,8 +63,8 @@ jobs:
       - name: Publier la release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.ver.outputs.tag }}
-          name: J.A.R.V.I.S. ${{ steps.ver.outputs.tag }}
+          tag_name: ${{ needs.check.outputs.tag }}
+          name: J.A.R.V.I.S. ${{ needs.check.outputs.tag }}
           target_commitish: ${{ github.sha }}
           files: Jarvis-Windows.zip
           generate_release_notes: true

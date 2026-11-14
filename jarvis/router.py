@@ -4,7 +4,7 @@ Renvoie (texte_a_dire) ou None si la phrase doit partir au LLM."""
 import re
 import unicodedata
 
-from . import actions
+from . import actions, config
 
 
 def _norm(t: str) -> str:
@@ -28,11 +28,22 @@ RULES = [
     (r"\bquelle heure|\bquel jour|\bon est quel|\bla date\b", lambda m: actions.now()),
     (r"^verrouille( le pc| l'ordi(nateur)?| la session)?$", lambda m: actions.system("lock")),
     (r"^annule l'arret$", lambda m: actions.system("cancel_shutdown")),
+    (r"^(mets|joue|lance|ecoute)( moi)? (de la musique de |la musique |la chanson |le son |du |de la |des |de l'|de )?(?P<q>.+?)( sur (youtube|spotify|deezer).*)?$",
+     lambda m: _music(m)),
     (r"^(lance|ouvre|demarre) (?!le dossier|mes |mon dossier|le site|youtube\.|google\.)(.+)$",
      lambda m: _open(m.group(2))),
     (r"^(ouvre|affiche) (mes |le dossier |mon dossier )(bureau|documents|telechargements|musique|images|videos)$",
      lambda m: actions.open_folder(m.group(3))),
 ]
+
+
+def _music(m):
+    q = m.group("q").strip()
+    # « lance spotify » / « ouvre discord » = ouvrir une appli, pas de la musique
+    if m.group(1) == "lance" and not m.group(3) and len(q.split()) <= 2:
+        return None
+    svc = m.group(6) or config.load().get("music_service", "youtube")
+    return actions.play_music(q, svc)
 
 
 def _open(name):
@@ -48,7 +59,9 @@ def route(text: str):
         m = re.search(pat, t)
         if m:
             try:
-                return fn(m)
+                res = fn(m)
             except Exception:
-                return None
+                res = None
+            if res is not None:
+                return res
     return None

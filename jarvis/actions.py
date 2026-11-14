@@ -121,11 +121,63 @@ def list_apps(query: str = "") -> str:
     return ", ".join(names) or "Aucune application trouvée."
 
 
-# ---------- Spotify ----------
-def spotify_play(query: str) -> str:
-    """Ouvre Spotify sur une recherche (l'utilisateur ou 'next' lance ensuite)."""
-    os.startfile(f"spotify:search:{query}")
-    return f"Recherche « {query} » ouverte dans Spotify."
+# ---------- Musique (sans API ni compte) ----------
+UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130 Safari/537.36",
+      "Accept-Language": "fr-FR,fr;q=0.9"}
+
+
+def _youtube_id(query: str):
+    import re
+    import urllib.parse
+    import requests
+    html = requests.get("https://www.youtube.com/results?search_query=" + urllib.parse.quote(query),
+                        headers=UA, timeout=8).text
+    m = re.search(r'"videoId":"([\w-]{11})"', html)
+    return m.group(1) if m else None
+
+
+def _deezer_track(query: str):
+    import requests
+    r = requests.get("https://api.deezer.com/search", params={"q": query, "limit": 1}, timeout=8).json()
+    d = r.get("data") or []
+    return d[0]["id"] if d else None
+
+
+def play_music(query: str, service: str = "youtube") -> str:
+    """Lance un titre/artiste sur le service choisi, sans clé API ni compte Premium.
+    youtube / youtube_music : lecture automatique de la 1re vidéo trouvée.
+    deezer : ouvre directement le titre trouvé. spotify : ouvre la recherche puis lance la lecture."""
+    import webbrowser
+    service = (service or "youtube").lower()
+    try:
+        if service in ("youtube", "youtube_music"):
+            vid = _youtube_id(query + (" audio" if service == "youtube_music" else ""))
+            if not vid:
+                return f"Rien trouvé pour « {query} »."
+            host = "music.youtube.com" if service == "youtube_music" else "www.youtube.com"
+            webbrowser.open(f"https://{host}/watch?v={vid}")
+            return f"Je lance « {query} »."
+        if service == "deezer":
+            tid = _deezer_track(query)
+            if not tid:
+                return f"Rien trouvé pour « {query} » sur Deezer."
+            try:
+                os.startfile(f"deezer://www.deezer.com/track/{tid}")
+            except OSError:
+                webbrowser.open(f"https://www.deezer.com/track/{tid}")
+            return f"« {query} » ouvert dans Deezer."
+        # Spotify : recherche dans l'appli, puis Entrée sur le meilleur résultat
+        os.startfile(f"spotify:search:{query}")
+        time.sleep(3.0)
+        for vk in (0x09, 0x0D):  # Tab puis Entrée (lecture du meilleur résultat)
+            user32.keybd_event(vk, 0, 0, 0); user32.keybd_event(vk, 0, 2, 0); time.sleep(0.4)
+        return f"Recherche « {query} » lancée dans Spotify."
+    except Exception as e:
+        return f"Impossible de lancer la musique : {e}"
+
+
+def spotify_play(query: str) -> str:  # compatibilité
+    return play_music(query, "spotify")
 
 
 # ---------- Fichiers ----------
