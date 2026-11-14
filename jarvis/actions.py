@@ -96,6 +96,7 @@ def _find_app(name: str):
 # Services web connus : ouverts directement, jamais confondus avec autre chose
 WEB_APPS = {
     "youtube music": "https://music.youtube.com", "yt music": "https://music.youtube.com",
+    "youtube musique": "https://music.youtube.com",
     "youtube": "https://www.youtube.com", "deezer": "https://www.deezer.com",
     "spotify web": "https://open.spotify.com", "netflix": "https://www.netflix.com",
     "prime video": "https://www.primevideo.com", "disney": "https://www.disneyplus.com",
@@ -114,9 +115,14 @@ def open_app(name: str) -> str:
         scan_apps()
     if n in _APPS:                       # 1. appli installée, nom exact
         os.startfile(_APPS[n]); return f"{n} lancé."
-    for k in sorted(WEB_APPS, key=len, reverse=True):  # 2. service web connu
-        if k in n:
-            webbrowser.open(WEB_APPS[k]); return f"{k.title()} ouvert."
+    import re
+    m = re.search(r"^(.+?) (?:sur|avec|dans|via) (youtube music|yt music|youtube|spotify|deezer)$", n)
+    if m:  # « PNL sur YouTube » demandé comme appli par l'IA : c'est de la musique
+        svc = {"yt music": "youtube_music", "youtube music": "youtube_music"}.get(m.group(2), m.group(2))
+        return play_music(m.group(1), svc)
+    site = re.sub(r"^(le site |le |la |l')", "", n)
+    if site in WEB_APPS:                 # 2. service web connu, nom EXACT uniquement
+        webbrowser.open(WEB_APPS[site]); return f"{site.title()} ouvert."
     key, target = _find_app(n)           # 3. appli installée, nom approché
     if not target:
         return f"Application « {name} » introuvable."

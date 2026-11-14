@@ -13,7 +13,33 @@ def _norm(t: str) -> str:
     return re.sub(r"[^\w\s']", " ", t).strip()
 
 
-WAKE = r"^(hey |he |ok |dis )?jarvis[ ,]*"
+WAKE = r"^((hey|he|hey|eh|et|ok|okay|dis|salut|ah|oh|bon) )*jarvis\b[ ,]*"
+POLITE = [
+    r"^(est ce que |est-ce que )?(tu peux|tu pourrais|peux tu|pourrais tu|tu veux bien|veux tu) ",
+    r"^(je veux|je voudrais|j'aimerais|j'ai envie d'|j'ai envie de|on va|on peut|vas y) ",
+    r"\b(s'il te plait|s'il vous plait|stp|svp|merci)\b",
+]
+INFINITIVES = {"mettre": "mets", "lancer": "lance", "jouer": "joue", "ecouter": "ecoute", "ouvrir": "ouvre",
+               "demarrer": "demarre", "fermer": "ferme", "monter": "monte", "baisser": "baisse", "couper": "coupe",
+               "passer": "passe", "chercher": "cherche", "mettre en pause": "pause"}
+ALIASES = [(r"\byoutube musique\b", "youtube music"), (r"\byou tube\b", "youtube"), (r"\bdeezeur\b", "deezer"),
+           (r"\bspotifaille\b", "spotify"), (r"\bytb\b", "youtube")]
+FILLER = r"^(une |un |la |le |les |des |du |de la |de l'|l'|de )?(musique|chanson|son|sons|titre|morceau|clip|video|album|playlist)s? (de |d'|du |des )?"
+
+
+def clean(text: str) -> str:
+    t = _norm(text)
+    t = re.sub(WAKE, "", t).strip()
+    for a, b in ALIASES:
+        t = re.sub(a, b, t)
+    for p in POLITE:
+        t = re.sub(p, "", t).strip()
+    t = re.sub(WAKE, "", t).strip()
+    w = t.split(" ", 1)
+    if w and w[0] in INFINITIVES:
+        t = INFINITIVES[w[0]] + (" " + w[1] if len(w) > 1 else "")
+    t = re.sub(r"^(\w+) moi ", r"\1 ", t)  # « lance-moi » -> « lance »
+    return re.sub(r"\s+", " ", t).strip()
 
 RULES = [
     (r"\b(musique|morceau|chanson|son|titre|piste) suivant|\bchange (de|la) (musique|chanson|son)|\bsuivant(e)?$|\bnext\b",
@@ -30,8 +56,13 @@ RULES = [
     (r"\bquelle heure|\bquel jour|\bon est quel|\bla date\b", lambda m: actions.now()),
     (r"^verrouille( le pc| l'ordi(nateur)?| la session)?$", lambda m: actions.system("lock")),
     (r"^annule l'arret$", lambda m: actions.system("cancel_shutdown")),
-    (r"^(mets|joue|lance|ecoute)( moi)? (de la musique de |la musique |la chanson |le son |l'album |du |de la |des |de l'|de )?(?P<q>.+?)( (sur|avec|dans) (?P<svc>youtube music|yt music|youtube|spotify|deezer))?$",
+    (r"^(mets|lance|joue)( de la| la| une)? musique$", lambda m: actions.media("play_pause")),
+    (r"^(ouvre|lance|va sur|demarre) (?P<svc>youtube music|yt music|youtube|spotify|deezer) (et|puis|pour) (mets|joue|lance|cherche|ecoute)( moi)? (?P<q>.+)$",
+     lambda m: actions.play_music(_q(m.group("q")), SERVICES[m.group("svc")])),
+    (r"^(?P<verb>mets|joue|lance|ecoute|cherche)( moi)? (?P<q>.+?)( (sur|avec|dans|via) (?P<svc>youtube music|yt music|youtube|spotify|deezer))?$",
      lambda m: _music(m)),
+    (r"^(?P<q>.+?) (sur|avec|dans|via) (?P<svc>youtube music|yt music|youtube|spotify|deezer)$",
+     lambda m: actions.play_music(_q(m.group("q")), SERVICES[m.group("svc")])),
     (r"^(lance|ouvre|demarre) (?!le dossier|mes |mon dossier|le site|youtube\.|google\.)(.+)$",
      lambda m: _open(m.group(2))),
     (r"^(ouvre|affiche) (mes |le dossier |mon dossier )(bureau|documents|telechargements|musique|images|videos)$",
@@ -46,7 +77,7 @@ SERVICES = {"youtube music": "youtube_music", "yt music": "youtube_music", "yout
 def _is_app(name: str) -> bool:
     """Vrai si « name » est une appli installée ou un site connu (Spotify, Discord, YouTube Music…)."""
     web = getattr(actions, "WEB_APPS", {})
-    if any(k == name or k in name for k in web):
+    if name in web:
         return True
     find = getattr(actions, "_find_app", None)
     try:
@@ -55,16 +86,23 @@ def _is_app(name: str) -> bool:
         return False
 
 
+def _q(q: str) -> str:
+    q = re.sub(FILLER, "", q.strip()).strip()
+    return re.sub(r"^(du |de la |des |de l'|de |d')", "", q).strip()
+
+
 def _music(m):
-    q = m.group("q").strip()
+    raw = m.group("q").strip()
     svc = m.group("svc")
     if svc:  # « lance PNL sur YouTube Music » : forcément de la musique
-        return actions.play_music(q, SERVICES[svc])
-    if q in SERVICES:  # « lance YouTube Music » tout seul = ouvrir le service
-        return None
-    if m.group(1) in ("lance", "ecoute") and not m.group(3) and _is_app(q):
+        return actions.play_music(_q(raw), SERVICES[svc])
+    if raw in SERVICES or raw in ("le site " + k for k in SERVICES):
+        return None  # « lance YouTube Music » tout seul = ouvrir le service
+    if m.group("verb") in ("lance", "ecoute", "cherche") and _is_app(raw):
         return None  # « lance Discord » = ouvrir l'appli
-    return actions.play_music(q, config.load().get("music_service", "youtube"))
+    if m.group("verb") == "cherche":
+        return None
+    return actions.play_music(_q(raw), config.load().get("music_service", "youtube"))
 
 
 def _weather(t):
@@ -86,7 +124,7 @@ def _open(name):
 
 
 def route(text: str):
-    t = re.sub(WAKE, "", _norm(text)).strip()
+    t = clean(text)
     if not t:
         return None
     for pat, fn in RULES:
