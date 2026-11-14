@@ -7,6 +7,10 @@ Dis **« Hey Jarvis »** (ou « OK Jarvis »), attends le bip, puis donne ta com
 2. Dézippe où tu veux, lance `Jarvis.exe`.
 3. Les mises à jour sont proposées automatiquement au lancement (ou clic droit sur l'icône → « Rechercher une mise à jour »).
 
+## Publier une mise à jour
+Change le numéro dans `jarvis/__init__.py` (ex. `1.0.1`) et pousse sur `main` : GitHub fabrique
+`Jarvis.exe` et publie la release ; les Jarvis installés la proposent au prochain lancement.
+
 ## Installation depuis le code
 1. Installe **Python 3.11 (Windows x64)** depuis python.org — coche « Add Python to PATH ».
    Sur Snapdragon, la version x64 tourne en émulation et a toutes les bibliothèques nécessaires.
