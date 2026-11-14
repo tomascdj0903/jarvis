@@ -223,6 +223,11 @@ def test_phase3():
         got.clear(); assert route(phrase), phrase; assert got == [want], (phrase, got)
     import jarvis.router as R
     fake.type_text = lambda t: f"TYPE:{t}"
+    import jarvis.assistant as AS
+    AS.planning_devoirs = lambda cfg=None: "DEVOIRS"
+    for ph in ("quels sont les devoirs de Nico", "mes devoirs", "il reste des devoirs à faire aujourd'hui ?"):
+        assert route(ph) == "DEVOIRS", ph
+    assert route("ouvre planning partagé") == "open:planning partage"
     assert route("Écris Bonjour à tous, j'arrive.") == "TYPE:Bonjour à tous, j'arrive."
 
 
@@ -356,6 +361,11 @@ def test_phase3():
         got.clear(); assert route(phrase), phrase; assert got == [want], (phrase, got)
     import jarvis.router as R
     fake.type_text = lambda t: f"TYPE:{t}"
+    import jarvis.assistant as AS
+    AS.planning_devoirs = lambda cfg=None: "DEVOIRS"
+    for ph in ("quels sont les devoirs de Nico", "mes devoirs", "il reste des devoirs à faire aujourd'hui ?"):
+        assert route(ph) == "DEVOIRS", ph
+    assert route("ouvre planning partagé") == "open:planning partage"
     assert route("Écris Bonjour à tous, j'arrive.") == "TYPE:Bonjour à tous, j'arrive."
 
 

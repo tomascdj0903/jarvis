@@ -198,6 +198,30 @@ def open_settings_page(name: str) -> str:
     return "Paramètres Windows ouverts."
 
 
+# ---------------------------------------------------------------- Planning partagé (web app Vercel)
+def planning_devoirs(cfg=None) -> str:
+    """Rappel des devoirs du jour, via la même adresse que le raccourci iPhone (/api/rappels-devoirs)."""
+    import requests
+    cfg = cfg or config.load()
+    key = (cfg.get("planning_key") or "").strip()
+    base = (cfg.get("planning_url") or "").rstrip("/")
+    if not key or not base:
+        return "Planning partagé n'est pas encore relié : ajoutez sa clé dans les Réglages."
+    try:
+        r = requests.get(f"{base}/api/rappels-devoirs", params={"cle": key}, timeout=20)
+    except Exception:
+        return "Je n'arrive pas à joindre Planning partagé."
+    if r.status_code == 401:
+        return "La clé de Planning partagé est refusée. Vérifiez-la dans les Réglages."
+    if not r.ok:
+        return f"Planning partagé ne répond pas correctement ({r.status_code})."
+    txt = r.text.strip()
+    if not txt:
+        return "Rien à rappeler aujourd'hui dans Planning partagé."
+    txt = re.sub(r"https?://\S+", "", txt)  # pas de lien lu à voix haute
+    return " ".join(txt.split())
+
+
 # ---------------------------------------------------------------- briefing
 def briefing(user_name: str = "") -> str:
     now = dt.datetime.now()
@@ -214,6 +238,10 @@ def briefing(user_name: str = "") -> str:
     if today:
         parts.append(f"Vous avez {len(today)} rappel{'s' if len(today) > 1 else ''} aujourd'hui : "
                      + ", ".join(f"{i['text']} à {dt.datetime.fromisoformat(i['when']):%H:%M}" for i in today[:3]) + ".")
+    if config.load().get("planning_key"):
+        d = planning_devoirs()
+        if not d.startswith(("Rien", "Je n'arrive", "La clé", "Planning partagé ne")):
+            parts.append(d)
     try:
         b = battery()
         if "charge" not in b and any(f"à {x} %" in b for x in range(0, 31)):

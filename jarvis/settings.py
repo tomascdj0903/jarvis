@@ -135,6 +135,14 @@ class Wizard:
             self._btn(r, "Obtenir", (lambda u=link: webbrowser.open(u)), GOLD).pack(side="left", padx=(6, 0))
             self.extra[k] = e
 
+        label("1 quater · PLANNING PARTAGÉ — clé du raccourci iPhone (RAPPELS_SECRET)")
+        prow0 = tk.Frame(f, bg=BG); prow0.pack(fill="x")
+        self.pkey = tk.Entry(prow0, bg=CARD, fg=WHITE, insertbackground=CYAN, relief="flat", font=("Segoe UI", 10),
+                             highlightthickness=1, highlightbackground="#12324A", highlightcolor=CYAN, show="•")
+        self.pkey.insert(0, cfg.get("planning_key", "")); self.pkey.pack(side="left", fill="x", expand=True, ipady=4)
+        self._btn(prow0, "Tester", self.test_planning).pack(side="left", padx=(6, 0))
+        self.pstatus = tk.Label(f, text="", fg=GREY, bg=BG, font=("Segoe UI", 9), anchor="w"); self.pstatus.pack(fill="x")
+
         label("1 ter · LANGUE")
         self.langs = [("fr", "Français"), ("pt", "Português"), ("en", "English")]
         self.lang = ttk.Combobox(f, values=[n for _, n in self.langs], state="readonly", style="J.TCombobox",
@@ -296,6 +304,16 @@ class Wizard:
                 self.w.after(0, lambda: self.mic_status.config(text=f"Voix indisponible : {e}", fg=RED))
         threading.Thread(target=run, daemon=True).start()
 
+    def test_planning(self):
+        self.pstatus.config(text="Test en cours…", fg=GREY)
+
+        def run():
+            from . import assistant
+            msg = assistant.planning_devoirs(dict(self.cfg, planning_key=self.pkey.get().strip()))
+            bad = msg.startswith(("Planning partagé n'est", "Je n'arrive", "La clé", "Planning partagé ne"))
+            self.w.after(0, lambda: self.pstatus.config(text=("✗ " if bad else "✓ ") + msg[:90], fg=RED if bad else GREEN))
+        threading.Thread(target=run, daemon=True).start()
+
     def clear_log(self):
         import logging
         for h in logging.getLogger().handlers:
@@ -368,7 +386,7 @@ class Wizard:
                         home_city=self.city.get().strip(),
                         log_utterances=self.logu.get(), pause_when_locked=self.lockp.get(),
                         conversation_mode=self.conv.get(), duck_music=self.duck.get(),
-                        morning_briefing=self.brief.get(),
+                        morning_briefing=self.brief.get(), planning_key=self.pkey.get().strip(),
                         language=self.langs[max(0, self.lang.current())][0],
                         **{k: e.get().strip() for k, e in self.extra.items()},
                         wake_threshold=round(0.75 - self.sens.get() * 0.06, 2), _autostart=self.autostart.get())

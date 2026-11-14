@@ -450,6 +450,8 @@ def selftest() -> int:
         return f"score silence={max(m.predict(np.zeros(1280, dtype=np.int16)).values()):.3f}"
     step("openwakeword hey_jarvis", oww)
     step("chiffrement de la clé (DPAPI)", lambda: config._unprotect(config._protect("test")) == "test" or 1/0)
+    step("architecture", lambda: ("ARM64 natif" if __import__("platform").machine().upper() == "ARM64" else
+                                  __import__("platform").machine()) + (" sur PC ARM64" if __import__("jarvis.updater", fromlist=["x"]).native_arm64() else ""))
     step("dossiers Windows réels", lambda: config.known_folder("Documents"))
     step("contrôle média Windows (winrt)", lambda: f"{len(__import__('jarvis.media', fromlist=['sessions']).sessions())} session(s)")
     step("modules", lambda: [__import__(f"jarvis.{m}") for m in ("actions", "brain", "router", "settings", "updater", "hud", "voice", "util", "media", "vision", "weather", "macros", "assistant")] and "ok")

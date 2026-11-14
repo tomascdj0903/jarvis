@@ -85,3 +85,48 @@ jobs:
             Jarvis-Windows.zip
             Jarvis-Windows.zip.sha256
           generate_release_notes: true
+
+  # Version native ARM64 (Snapdragon X) : expérimentale, ne bloque jamais la version x64
+  build-arm64:
+    needs: [check, build]
+    if: needs.check.outputs.build == 'true'
+    runs-on: windows-11-arm
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          architecture: arm64
+      - name: Dépendances
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          python -c "import openwakeword.utils as u; u.download_models(['hey_jarvis'])"
+      - name: Construire Jarvis.exe (ARM64)
+        shell: pwsh
+        run: |
+          $oww = (python -c "import openwakeword,os;print(os.path.dirname(openwakeword.__file__))").Trim()
+          pyinstaller --noconfirm --clean --windowed --name Jarvis `
+            --icon assets\jarvis.ico --add-data "assets;assets" --add-data "$oww;openwakeword" `
+            --collect-all onnxruntime --collect-all winrt --collect-all edge_tts --collect-all sounddevice `
+            --hidden-import pystray._win32 --collect-submodules jarvis run_jarvis.py
+      - name: Auto-test du .exe ARM64
+        shell: pwsh
+        run: |
+          $p = Start-Process dist\Jarvis\Jarvis.exe -ArgumentList "--selftest","--offline" -Wait -PassThru
+          Get-Content dist\Jarvis\selftest.txt
+          if ($p.ExitCode -ne 0) { throw "Auto-test ARM64 échoué" }
+          Remove-Item dist\Jarvis\selftest.txt
+      - name: Archive ARM64
+        shell: pwsh
+        run: |
+          Compress-Archive -Path dist\Jarvis -DestinationPath Jarvis-Windows-ARM64.zip
+          (Get-FileHash Jarvis-Windows-ARM64.zip -Algorithm SHA256).Hash.ToLower() + "  Jarvis-Windows-ARM64.zip" | Out-File -Encoding ascii Jarvis-Windows-ARM64.zip.sha256
+      - name: Ajouter à la release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.check.outputs.tag }}
+          files: |
+            Jarvis-Windows-ARM64.zip
+            Jarvis-Windows-ARM64.zip.sha256

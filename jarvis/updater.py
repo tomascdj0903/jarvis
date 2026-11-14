@@ -30,6 +30,19 @@ def cleanup_temp():
             pass
 
 
+def native_arm64() -> bool:
+    """Vrai si Windows tourne sur un processeur ARM64 (même si ce Jarvis est la version x64 émulée)."""
+    try:
+        import ctypes
+        pm, nm = ctypes.c_ushort(), ctypes.c_ushort()
+        k = ctypes.windll.kernel32
+        if k.IsWow64Process2(k.GetCurrentProcess(), ctypes.byref(pm), ctypes.byref(nm)):
+            return nm.value == 0xAA64
+    except Exception:
+        pass
+    return False
+
+
 def check():
     """Renvoie (version, url_zip, notes) si une version plus récente existe, sinon None."""
     try:
@@ -40,8 +53,11 @@ def check():
         tag = d.get("tag_name", "")
         if not tag or _v(tag) <= _v(__version__):
             return None
-        zips = [a for a in d.get("assets", []) if a["name"].lower().endswith(".zip")]
-        sums = [a for a in d.get("assets", []) if a["name"].lower().endswith(".sha256")]
+        assets = d.get("assets", [])
+        arm = native_arm64() and any(a["name"] == "Jarvis-Windows-ARM64.zip" for a in assets)
+        want = "Jarvis-Windows-ARM64.zip" if arm else "Jarvis-Windows.zip"
+        zips = [a for a in assets if a["name"] == want] or [a for a in assets if a["name"].lower().endswith(".zip")]
+        sums = [a for a in assets if a["name"] == zips[0]["name"] + ".sha256"] if zips else []
         if zips:
             url = zips[0]["browser_download_url"]
             check.sha_url = sums[0]["browser_download_url"] if sums else None

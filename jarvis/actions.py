@@ -269,6 +269,7 @@ WEB_APPS = {
     "claude": "https://claude.ai", "instagram": "https://www.instagram.com",
     "whatsapp web": "https://web.whatsapp.com", "github": "https://github.com",
     "soundcloud": "https://soundcloud.com", "canva": "https://www.canva.com",
+    "planning partage": "https://planning-partage-xi.vercel.app", "planning partagé": "https://planning-partage-xi.vercel.app",
 }
 
 

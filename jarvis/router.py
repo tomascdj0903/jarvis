@@ -72,6 +72,9 @@ def _timer(t):
 
 
 RULES = [
+    (r"\b(devoirs?|controles?)\b.*\b(aujourd'hui|demain|a faire|du jour|de nico|reste|rappel)|^(mes |les |quels sont les |c'est quoi les )?devoirs\b",
+     lambda m: __import__("jarvis.assistant", fromlist=["x"]).planning_devoirs()),
+    (r"^(ouvre|lance|affiche)( le| mon)? planning( partage)?$", lambda m: actions.open_app("planning partage")),
     (r"^(clique|clic|appuie) (sur )?(?P<c>.+)$", lambda m: _click(m.group("c"))),
     (r"^rappelle(?: moi)?\b", lambda m: _remind(m.string)),
     (r"^(mets |lance |demarre )?(un )?minuteur (de |d')?.*\d", lambda m: _timer(m.string)),

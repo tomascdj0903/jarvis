@@ -83,6 +83,7 @@ TOOLS = [
     _tool("read_notes", "Lit les dernières notes."),
     _tool("briefing", "Point du jour : date, météo, rappels du jour, batterie."),
     _tool("battery", "Niveau de batterie et autonomie."),
+    _tool("planning_devoirs", "Devoirs et contrôles du jour depuis l'application Planning partagé."),
 ]
 
 
@@ -227,6 +228,7 @@ class Brain:
             "read_notes": lambda: assistant.read_notes(),
             "briefing": lambda: assistant.briefing(cfg.get("user_name", "")),
             "battery": lambda: assistant.battery(),
+            "planning_devoirs": lambda: assistant.planning_devoirs(cfg),
         }
         try:
             return table[name]() if name in table else "Outil inconnu."

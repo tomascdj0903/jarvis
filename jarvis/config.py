@@ -57,6 +57,8 @@ DEFAULTS = {
     "conversation_mode": True,
     "duck_music": True,
     "morning_briefing": True,
+    "planning_url": "https://planning-partage-xi.vercel.app",
+    "planning_key": "",
     "show_hud": True,
     "log_utterances": False,
     "pause_when_locked": True,
@@ -82,7 +84,7 @@ def _dpapi(data: bytes, encrypt: bool) -> bytes:
     return res
 
 
-SECRETS = ("groq_api_key", "gemini_api_key", "openrouter_api_key")
+SECRETS = ("groq_api_key", "gemini_api_key", "openrouter_api_key", "planning_key")
 
 
 def _protect(v: str) -> str:
