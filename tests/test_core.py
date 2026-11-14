@@ -46,6 +46,17 @@ def test_router():
         assert route(phrase) == want, (phrase, route(phrase), want)
 
 
+def test_weather_routing():
+    import jarvis.weather as w
+    got = []
+    w.weather = lambda city, day: got.append((city, day)) or "meteo"
+    for phrase, want in {"quelle température fait-il demain": ("", "demain"),
+                         "quel temps fait-il à Nice": ("nice", "aujourd'hui"),
+                         "est-ce qu'il va pleuvoir samedi": ("", "samedi"),
+                         "météo à Lisbonne après-demain": ("lisbonne", "après-demain")}.items():
+        got.clear(); assert route(phrase) == "meteo", phrase; assert got[0] == want, (phrase, got)
+
+
 def test_versions():
     from jarvis.updater import _v
     assert _v("v1.10.0") > _v("1.9.9") and _v("v1.3.3") == _v("1.3.3")
@@ -69,4 +80,4 @@ def test_brain_tool_loop():
 
 
 if __name__ == "__main__":
-    test_router(); test_versions(); test_brain_tool_loop(); print("TOUS LES TESTS OK")
+    test_router(); test_weather_routing(); test_versions(); test_brain_tool_loop(); print("TOUS LES TESTS OK")

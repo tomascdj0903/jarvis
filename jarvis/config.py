@@ -27,6 +27,7 @@ DEFAULTS = {
     "show_idle_orb": True,
     "input_device": None,
     "music_service": "youtube",
+    "home_city": "",
     "hotkey": "ctrl+alt+j",
     "allowed_folders": [
         str(Path.home() / "Desktop"),

@@ -47,7 +47,12 @@ TOOLS = [
           {"action": {"type": "string",
                       "enum": ["lock", "screenshot", "shutdown", "restart", "cancel_shutdown", "sleep"]}},
           ["action"]),
-    _tool("web_search", "Ouvre une recherche Google.", {"query": S}, ["query"]),
+    _tool("get_weather", "Météo actuelle ou prévue, répondue à voix haute. Sans ville : position de l'utilisateur.",
+          {"city": S, "day": {"type": "string", "description": "aujourd'hui, demain, après-demain ou un jour de la semaine"}}),
+    _tool("ask_web", "Cherche sur internet une info récente ou factuelle (actualité, scores, prix, horaires, définitions) "
+          "et renvoie la réponse à dire. N'ouvre rien à l'écran.", {"question": S}, ["question"]),
+    _tool("web_search", "Ouvre une page Google dans le navigateur. UNIQUEMENT si l'utilisateur demande explicitement "
+          "d'ouvrir ou d'afficher une recherche.", {"query": S}, ["query"]),
     _tool("open_website", "Ouvre un site web.", {"url": S}, ["url"]),
     _tool("type_text", "Tape du texte dans la fenêtre active.", {"text": S}, ["text"]),
     _tool("set_timer", "Lance un minuteur.", {"seconds": {"type": "integer"}, "label": S}, ["seconds"]),
@@ -65,7 +70,7 @@ class Brain:
             "dans le style du Jarvis d'Iron Man : poli, efficace, légèrement pince-sans-rire. "
             f"Tu t'adresses à lui en l'appelant « {self.cfg['user_name']} ». "
             "Tes réponses sont LUES À VOIX HAUTE : une ou deux phrases courtes, sans markdown, sans liste, sans emoji. "
-            "Utilise les outils dès qu'une action est demandée. « Change de musique » = media next. Pour ouvrir YouTube, YouTube Music, Deezer, Netflix… utilise open_app avec ce nom exact, jamais une recherche web. « Lance / mets / joue <artiste ou titre> (sur <service>) » = play_music. Le texte vient d'une transcription vocale : devine le sens le plus probable (noms d'artistes mal orthographiés, etc.) au lieu de demander. "
+            "Utilise les outils dès qu'une action est demandée. « Change de musique » = media next. Pour une question (météo, actualité, fait, calcul), RÉPONDS À VOIX HAUTE : get_weather pour la météo, ask_web pour une info récente, sinon tes connaissances. N'ouvre JAMAIS de page web pour répondre, et un seul outil suffit en général. Pour ouvrir YouTube, YouTube Music, Deezer, Netflix… utilise open_app avec ce nom exact, jamais une recherche web. « Lance / mets / joue <artiste ou titre> (sur <service>) » = play_music. Le texte vient d'une transcription vocale : devine le sens le plus probable (noms d'artistes mal orthographiés, etc.) au lieu de demander. "
             f"Date et heure actuelles : {datetime.datetime.now():%A %d/%m/%Y %H:%M}. Réponds en français."
         )
 
@@ -129,6 +134,8 @@ class Brain:
             "organize_downloads": lambda: a.organize_downloads(cfg),
             "system": lambda: a.system(args["action"]),
             "web_search": lambda: a.web_search(args["query"]),
+            "get_weather": lambda: __import__("jarvis.weather", fromlist=["weather"]).weather(args.get("city", ""), args.get("day", "aujourd'hui")),
+            "ask_web": lambda: __import__("jarvis.weather", fromlist=["ask_web"]).ask_web(args["question"], cfg),
             "open_website": lambda: a.open_website(args["url"]),
             "type_text": lambda: a.type_text(args["text"]),
             "set_timer": lambda: a.set_timer(args["seconds"], args.get("label", "minuteur"), self.speak),

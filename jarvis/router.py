@@ -25,6 +25,8 @@ RULES = [
     (r"\b(monte|augmente|plus fort)( le (son|volume))?", lambda m: actions.volume("up", 5)),
     (r"\b(baisse|diminue|moins fort)( le (son|volume))?", lambda m: actions.volume("down", 5)),
     (r"^(coupe|mute)( le)? (son|volume)$|^silence$", lambda m: actions.volume("mute")),
+    (r"\b(meteo|temps fait|quel temps|temperature|fait (il |t il )?(chaud|froid)|va t il pleuvoir|il va pleuvoir|pleuvoir)\b",
+     lambda m: _weather(m.string)),
     (r"\bquelle heure|\bquel jour|\bon est quel|\bla date\b", lambda m: actions.now()),
     (r"^verrouille( le pc| l'ordi(nateur)?| la session)?$", lambda m: actions.system("lock")),
     (r"^annule l'arret$", lambda m: actions.system("cancel_shutdown")),
@@ -63,6 +65,19 @@ def _music(m):
     if m.group(1) in ("lance", "ecoute") and not m.group(3) and _is_app(q):
         return None  # « lance Discord » = ouvrir l'appli
     return actions.play_music(q, config.load().get("music_service", "youtube"))
+
+
+def _weather(t):
+    from . import weather
+    day = next((d for d in ("apres demain", "demain", "lundi", "mardi", "mercredi", "jeudi", "vendredi",
+                            "samedi", "dimanche") if d in t), "aujourd'hui")
+    day = "après-demain" if day == "apres demain" else day
+    m = re.search(r"\b(?:a|sur|pour) ([a-z][a-z' -]+?)(?: demain| apres demain| aujourd'hui| ce| cette|$)", t)
+    city = m.group(1).strip() if m and m.group(1) not in ("quelle", "combien") else ""
+    try:
+        return weather.weather(city, day)
+    except Exception:
+        return None  # l'IA prendra le relais
 
 
 def _open(name):

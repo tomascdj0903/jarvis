@@ -123,6 +123,9 @@ class Wizard:
         label("2 · COMMENT DOIS-JE VOUS APPELER ?")
         self.name = entry(cfg.get("user_name", "Monsieur"))
 
+        label("2 bis · VOTRE VILLE (météo) — vide = position automatique de l'ordinateur")
+        self.city = entry(cfg.get("home_city", ""))
+
         label("3 · MICRO — parlez : la barre doit bouger")
         self.mics = list_mics()
         names = ["Micro par défaut de Windows"] + [n for _, n in self.mics]
@@ -300,6 +303,7 @@ class Wizard:
                         input_device=self.device(), show_idle_orb=self.orb.get(),
                         music_service=self.services[max(0, self.music.current())][0],
                         voice=self.voices[max(0, self.voice.current())][0],
+                        home_city=self.city.get().strip(),
                         wake_threshold=round(0.75 - self.sens.get() * 0.06, 2), _autostart=self.autostart.get())
         config.save(self.cfg)
         if self.stream:

@@ -334,6 +334,12 @@ def selftest() -> int:
     step("openwakeword hey_jarvis", oww)
     step("modules", lambda: [__import__(f"jarvis.{m}") for m in ("actions", "brain", "router", "settings", "updater", "hud", "voice")] and "ok")
     step("routeur", lambda: __import__("jarvis.router", fromlist=["route"]).route("raconte une blague") is None or 1/0)
+    try:  # test réseau réel (informatif, ne bloque pas la publication)
+        from .weather import weather
+        out.append("INFO météo Nice demain : " + weather("Nice", "demain"))
+        out.append("INFO météo position auto : " + weather("", "aujourd'hui"))
+    except Exception as e:
+        out.append(f"WARN météo : {e!r}")
     report = Path(sys.executable).parent / "selftest.txt"
     report.write_text("\n".join(out) + f"\nRESULT {'OK' if ok else 'FAIL'}\n", encoding="utf-8")
     return 0 if ok else 1
