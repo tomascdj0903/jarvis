@@ -9,6 +9,7 @@ pyinstaller --noconfirm --clean --windowed --name Jarvis ^
   --add-data "assets;assets" ^
   --add-data "%OWW%;openwakeword" ^
   --collect-all onnxruntime ^
+  --collect-all winrt ^
   --collect-all edge_tts ^
   --collect-all sounddevice ^
   --hidden-import pystray._win32 ^

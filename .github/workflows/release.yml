@@ -48,7 +48,7 @@ jobs:
           architecture: x64
       - name: Tests unitaires
         run: |
-          pip install requests
+          pip install requests numpy
           python tests/test_core.py
       - name: Dépendances
         run: |
@@ -61,7 +61,7 @@ jobs:
           $oww = (python -c "import openwakeword,os;print(os.path.dirname(openwakeword.__file__))").Trim()
           pyinstaller --noconfirm --clean --windowed --name Jarvis `
             --icon assets\jarvis.ico --add-data "assets;assets" --add-data "$oww;openwakeword" `
-            --collect-all onnxruntime --collect-all edge_tts --collect-all sounddevice `
+            --collect-all onnxruntime --collect-all winrt --collect-all edge_tts --collect-all sounddevice `
             --hidden-import pystray._win32 run_jarvis.py
       - name: Auto-test du .exe (tout est-il bien embarqué ?)
         shell: pwsh

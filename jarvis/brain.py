@@ -51,6 +51,8 @@ TOOLS = [
           {"city": S, "day": {"type": "string", "description": "aujourd'hui, demain, après-demain ou un jour de la semaine"}}),
     _tool("ask_web", "Cherche sur internet une info récente ou factuelle (actualité, scores, prix, horaires, définitions) "
           "et renvoie la réponse à dire. N'ouvre rien à l'écran.", {"question": S}, ["question"]),
+    _tool("look_at_screen", "Regarde l'écran de l'utilisateur et répond à une question dessus (qu'est-ce qui est affiché, "
+          "lis ce texte, résume cette page, où est tel bouton, quelle erreur…).", {"question": S}, ["question"]),
     _tool("web_search", "Ouvre une page Google dans le navigateur. UNIQUEMENT si l'utilisateur demande explicitement "
           "d'ouvrir ou d'afficher une recherche.", {"query": S}, ["query"]),
     _tool("open_website", "Ouvre un site web.", {"url": S}, ["url"]),
@@ -70,7 +72,7 @@ class Brain:
             "dans le style du Jarvis d'Iron Man : poli, efficace, légèrement pince-sans-rire. "
             f"Tu t'adresses à lui en l'appelant « {self.cfg['user_name']} ». "
             "Tes réponses sont LUES À VOIX HAUTE : une ou deux phrases courtes, sans markdown, sans liste, sans emoji. "
-            "Utilise les outils dès qu'une action est demandée. « Change de musique » = media next. Pour une question (météo, actualité, fait, calcul), RÉPONDS À VOIX HAUTE : get_weather pour la météo, ask_web pour une info récente, sinon tes connaissances. N'ouvre JAMAIS de page web pour répondre, et un seul outil suffit en général. Pour ouvrir YouTube, YouTube Music, Deezer, Netflix… utilise open_app avec ce nom exact, jamais une recherche web. « Lance / mets / joue <artiste ou titre> (sur <service>) » = play_music. Le texte vient d'une transcription vocale : devine le sens le plus probable (noms d'artistes mal orthographiés, etc.) au lieu de demander. "
+            "Utilise les outils dès qu'une action est demandée. « Change de musique » = media next. Si la demande parle de l'écran (« regarde », « ce qui est affiché », « lis ça », « cette page », « cette erreur »), utilise look_at_screen. Pour une question (météo, actualité, fait, calcul), RÉPONDS À VOIX HAUTE : get_weather pour la météo, ask_web pour une info récente, sinon tes connaissances. N'ouvre JAMAIS de page web pour répondre, et un seul outil suffit en général. Pour ouvrir YouTube, YouTube Music, Deezer, Netflix… utilise open_app avec ce nom exact, jamais une recherche web. « Lance / mets / joue <artiste ou titre> (sur <service>) » = play_music. Le texte vient d'une transcription vocale : devine le sens le plus probable (noms d'artistes mal orthographiés, etc.) au lieu de demander. "
             f"Date et heure actuelles : {datetime.datetime.now():%A %d/%m/%Y %H:%M}. Réponds en français."
         )
 
@@ -134,6 +136,7 @@ class Brain:
             "organize_downloads": lambda: a.organize_downloads(cfg),
             "system": lambda: a.system(args["action"]),
             "web_search": lambda: a.web_search(args["query"]),
+            "look_at_screen": lambda: __import__("jarvis.vision", fromlist=["look"]).look(args["question"], cfg),
             "get_weather": lambda: __import__("jarvis.weather", fromlist=["weather"]).weather(args.get("city", ""), args.get("day", "aujourd'hui")),
             "ask_web": lambda: __import__("jarvis.weather", fromlist=["ask_web"]).ask_web(args["question"], cfg),
             "open_website": lambda: a.open_website(args["url"]),

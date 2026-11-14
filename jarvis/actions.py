@@ -12,6 +12,70 @@ from . import config
 
 user32 = ctypes.windll.user32 if os.name == "nt" else None
 
+# ---------- Premier plan ----------
+BROWSERS = ("chrome.exe", "msedge.exe", "firefox.exe", "brave.exe", "opera.exe", "vivaldi.exe")
+
+
+def _windows():
+    """[(hwnd, exe, titre)] des fenêtres visibles."""
+    from ctypes import wintypes
+    k32 = ctypes.windll.kernel32
+    res = []
+
+    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    def cb(hwnd, _):
+        if user32.IsWindowVisible(hwnd) and user32.GetWindowTextLengthW(hwnd):
+            pid = wintypes.DWORD()
+            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+            h = k32.OpenProcess(0x1000, False, pid.value)
+            exe = ""
+            if h:
+                buf = ctypes.create_unicode_buffer(512); n = wintypes.DWORD(512)
+                if k32.QueryFullProcessImageNameW(h, 0, buf, ctypes.byref(n)):
+                    exe = buf.value.rsplit("\\", 1)[-1].lower()
+                k32.CloseHandle(h)
+            t = ctypes.create_unicode_buffer(512); user32.GetWindowTextW(hwnd, t, 512)
+            res.append((hwnd, exe, t.value))
+        return True
+    user32.EnumWindows(cb, 0)
+    return res  # ordre Z : la plus récemment active en premier
+
+
+def _force_front(hwnd):
+    if user32.IsIconic(hwnd):
+        user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+    # astuce Alt : Windows autorise alors le changement de premier plan
+    user32.keybd_event(0x12, 0, 0, 0); user32.keybd_event(0x12, 0, 2, 0)
+    user32.SetForegroundWindow(hwnd)
+    user32.BringWindowToTop(hwnd)
+
+
+def bring_to_front(exes=BROWSERS, title_hint="", delay=1.2, tries=6):
+    """Met au premier plan la fenêtre qui vient d'être ouverte (navigateur ou appli)."""
+    import threading
+
+    def run():
+        time.sleep(delay)
+        for _ in range(tries):
+            try:
+                wins = [w for w in _windows() if (not exes or w[1] in exes)
+                        and (not title_hint or title_hint.lower() in w[2].lower())]
+                if wins:
+                    _force_front(wins[0][0])
+                    if user32.GetForegroundWindow() == wins[0][0]:
+                        return
+            except Exception:
+                return
+            time.sleep(0.6)
+    threading.Thread(target=run, daemon=True).start()
+
+
+def open_url(url: str):
+    import webbrowser
+    webbrowser.open(url)
+    bring_to_front()
+
+
 # ---------- Touches média / volume ----------
 VK = {
     "next": 0xB0, "previous": 0xB1, "stop": 0xB2, "play_pause": 0xB3,
@@ -114,7 +178,8 @@ def open_app(name: str) -> str:
     if not _APPS:
         scan_apps()
     if n in _APPS:                       # 1. appli installée, nom exact
-        os.startfile(_APPS[n]); return f"{n} lancé."
+        os.startfile(_APPS[n]); bring_to_front(exes=(), title_hint=n.split()[0], delay=2.0, tries=10)
+        return f"{n} lancé."
     import re
     m = re.search(r"^(.+?) (?:sur|avec|dans|via) (youtube music|yt music|youtube|spotify|deezer)$", n)
     if m:  # « PNL sur YouTube » demandé comme appli par l'IA : c'est de la musique
@@ -122,11 +187,13 @@ def open_app(name: str) -> str:
         return play_music(m.group(1), svc)
     site = re.sub(r"^(le site |le |la |l')", "", n)
     if site in WEB_APPS:                 # 2. service web connu, nom EXACT uniquement
-        webbrowser.open(WEB_APPS[site]); return f"{site.title()} ouvert."
+        open_url(WEB_APPS[site]); return f"{site.title()} ouvert."
     key, target = _find_app(n)           # 3. appli installée, nom approché
     if not target:
         return f"Application « {name} » introuvable."
     os.startfile(target)
+    if not str(target).startswith("steam://"):
+        bring_to_front(exes=(), title_hint=key.split()[0], delay=2.0, tries=10)
     return f"{key} lancé."
 
 
@@ -185,7 +252,8 @@ def play_music(query: str, service: str = "youtube") -> str:
             if not vid:
                 return f"Rien trouvé pour « {query} »."
             host = "music.youtube.com" if service == "youtube_music" else "www.youtube.com"
-            webbrowser.open(f"https://{host}/watch?v={vid}")
+            open_url(f"https://{host}/watch?v={vid}")
+            _autoplay(after=3)
             return f"Je lance « {query} »."
         if service == "deezer":
             tid = _deezer_track(query)
@@ -194,16 +262,61 @@ def play_music(query: str, service: str = "youtube") -> str:
             try:
                 os.startfile(f"deezer://www.deezer.com/track/{tid}")
             except OSError:
-                webbrowser.open(f"https://www.deezer.com/track/{tid}")
-            return f"« {query} » ouvert dans Deezer."
+                open_url(f"https://www.deezer.com/track/{tid}")
+            _autoplay(after=4)
+            return f"Je lance « {query} » sur Deezer."
         # Spotify : recherche dans l'appli, puis Entrée sur le meilleur résultat
         os.startfile(f"spotify:search:{query}")
         time.sleep(3.0)
         for vk in (0x09, 0x0D):  # Tab puis Entrée (lecture du meilleur résultat)
             user32.keybd_event(vk, 0, 0, 0); user32.keybd_event(vk, 0, 2, 0); time.sleep(0.4)
-        return f"Recherche « {query} » lancée dans Spotify."
+        _autoplay(after=1, keywords=("spotify",))
+        return f"Je lance « {query} » sur Spotify."
     except Exception as e:
         return f"Impossible de lancer la musique : {e}"
+
+
+def _autoplay(after=3, keywords=None):
+    """Lance la lecture si le lecteur s'est ouvert en pause (blocage de lecture auto du navigateur)."""
+    try:
+        from . import media
+        if keywords:
+            media.ensure_playing(keywords=keywords, after=after)
+        else:
+            media.ensure_playing(after=after)
+    except Exception:
+        pass
+
+
+def resume() -> str:
+    try:
+        from . import media
+        if media.play():
+            return "Lecture lancée."
+    except Exception:
+        pass
+    _press(VK["play_pause"])
+    return "Lecture lancée."
+
+
+def pause_music() -> str:
+    try:
+        from . import media
+        if media.pause():
+            return "Pause."
+    except Exception:
+        pass
+    _press(VK["play_pause"])
+    return "Pause."
+
+
+def what_is_playing() -> str:
+    try:
+        from . import media
+        t = media.now_playing()
+        return f"C'est {t}." if t else "Rien ne joue en ce moment."
+    except Exception:
+        return "Je ne peux pas voir ce qui joue."
 
 
 def spotify_play(query: str) -> str:  # compatibilité
@@ -306,14 +419,14 @@ def now() -> str:
 
 
 def web_search(query: str) -> str:
-    webbrowser.open(f"https://www.google.com/search?q={query}")
+    open_url(f"https://www.google.com/search?q={query}")
     return f"Recherche « {query} » ouverte."
 
 
 def open_website(url: str) -> str:
     if not url.startswith("http"):
         url = "https://" + url
-    webbrowser.open(url)
+    open_url(url)
     return f"{url} ouvert."
 
 

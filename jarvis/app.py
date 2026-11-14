@@ -332,6 +332,7 @@ def selftest() -> int:
         import numpy as np
         return f"score silence={max(m.predict(np.zeros(1280, dtype=np.int16)).values()):.3f}"
     step("openwakeword hey_jarvis", oww)
+    step("contrôle média Windows (winrt)", lambda: f"{len(__import__('jarvis.media', fromlist=['sessions']).sessions())} session(s)")
     step("modules", lambda: [__import__(f"jarvis.{m}") for m in ("actions", "brain", "router", "settings", "updater", "hud", "voice")] and "ok")
     step("routeur", lambda: __import__("jarvis.router", fromlist=["route"]).route("raconte une blague") is None or 1/0)
     try:  # test réseau réel (informatif, ne bloque pas la publication)

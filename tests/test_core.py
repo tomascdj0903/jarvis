@@ -8,6 +8,7 @@ for n in ("media", "volume", "now", "system", "open_folder"):
     setattr(fake, n, (lambda name: (lambda *a, **k: calls.append((name, a)) or f"{name}:{a}"))(n))
 fake.open_app = lambda n: f"open:{n}"
 fake.play_music = lambda q, s: f"play[{s}]:{q}"
+fake.resume = lambda: "RESUME"; fake.pause_music = lambda: "PAUSE"; fake.what_is_playing = lambda: "NOWPLAYING"
 fake.WEB_APPS = {"youtube music": "", "youtube": "", "deezer": "", "netflix": ""}
 fake._find_app = lambda n: (n, "x") if n in ("spotify", "discord", "brawlhalla") else (None, None)
 fake.WEB_APPS["youtube musique"] = ""
@@ -23,8 +24,15 @@ CASES = {
     "Hey Jarvis, change de musique": "media:('next',)",
     "musique suivante": "media:('next',)",
     "passe à la chanson suivante": "media:('next',)",
-    "pause": "media:('play_pause',)",
-    "mets de la musique": "media:('play_pause',)",
+    "pause": "PAUSE",
+    "mets en pause": "PAUSE",
+    "arrête la musique": "PAUSE",
+    "mets de la musique": "RESUME",
+    "Lance la lecture.": "RESUME",
+    "reprends la lecture": "RESUME",
+    "relance la musique": "RESUME",
+    "lecture": "RESUME",
+    "c'est quoi cette musique": "NOWPLAYING",
     "monte le son": "volume:('up', 5)",
     "tu peux baisser le volume stp": "volume:('down', 5)",
     "quelle heure est-il": "now:()",

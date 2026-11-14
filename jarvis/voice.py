@@ -123,8 +123,18 @@ class Voice:
             raise RuntimeError(f"Transcription {r.status_code} : {r.text[:150]}")
         return r.json().get("text", "").strip()
 
+    HALLU = ("sous-titrage", "sous titrage", "radio-canada", "radio canada", "amara.org", "merci d'avoir regardé",
+             "sous-titres réalisés", "abonnez-vous", "st' 501", "sous-titres par", "♪")
+
     def listen(self) -> str:
-        return self.transcribe(self.record_command())
+        wav = self.record_command()
+        pcm = np.frombuffer(wav[44:], dtype=np.int16)
+        if pcm.size == 0 or float(np.sqrt(np.mean(pcm.astype(np.float32) ** 2))) < 120:
+            return ""  # silence : on n'envoie rien (évite les phrases inventées par Whisper)
+        text = self.transcribe(wav)
+        if any(h in text.lower() for h in self.HALLU):
+            return ""
+        return text
 
     # ---------- parole ----------
     def speak(self, text: str):

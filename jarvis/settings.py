@@ -99,7 +99,10 @@ class Wizard:
         win = cv.create_window((28, 0), window=f, anchor="nw")
         f.bind("<Configure>", lambda e: cv.configure(scrollregion=cv.bbox("all")))
         cv.bind("<Configure>", lambda e: cv.itemconfigure(win, width=e.width - 56))
+        self._cv = cv
         w.bind_all("<MouseWheel>", lambda e: cv.yview_scroll(int(-e.delta / 120), "units") if self.w.winfo_exists() else None)
+        # une liste déroulante survolée ne doit JAMAIS changer de valeur à la molette (bug du réglage musique)
+        w.bind_class("TCombobox", "<MouseWheel>", lambda e: (cv.yview_scroll(int(-e.delta / 120), "units"), "break")[1])
 
         def label(t):
             tk.Label(f, text=t, fg=GREY, bg=BG, font=("Segoe UI Semibold", 9), anchor="w").pack(fill="x", pady=(10, 2))
