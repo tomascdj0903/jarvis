@@ -28,7 +28,7 @@ RULES = [
     (r"\bquelle heure|\bquel jour|\bon est quel|\bla date\b", lambda m: actions.now()),
     (r"^verrouille( le pc| l'ordi(nateur)?| la session)?$", lambda m: actions.system("lock")),
     (r"^annule l'arret$", lambda m: actions.system("cancel_shutdown")),
-    (r"^(mets|joue|lance|ecoute)( moi)? (de la musique de |la musique |la chanson |le son |du |de la |des |de l'|de )?(?P<q>.+?)( sur (youtube|spotify|deezer).*)?$",
+    (r"^(mets|joue|lance|ecoute)( moi)? (de la musique de |la musique |la chanson |le son |l'album |du |de la |des |de l'|de )?(?P<q>.+?)( (sur|avec|dans) (?P<svc>youtube music|yt music|youtube|spotify|deezer))?$",
      lambda m: _music(m)),
     (r"^(lance|ouvre|demarre) (?!le dossier|mes |mon dossier|le site|youtube\.|google\.)(.+)$",
      lambda m: _open(m.group(2))),
@@ -37,13 +37,32 @@ RULES = [
 ]
 
 
+SERVICES = {"youtube music": "youtube_music", "yt music": "youtube_music", "youtube": "youtube",
+            "spotify": "spotify", "deezer": "deezer"}
+
+
+def _is_app(name: str) -> bool:
+    """Vrai si « name » est une appli installée ou un site connu (Spotify, Discord, YouTube Music…)."""
+    web = getattr(actions, "WEB_APPS", {})
+    if any(k == name or k in name for k in web):
+        return True
+    find = getattr(actions, "_find_app", None)
+    try:
+        return bool(find and find(name)[1])
+    except Exception:
+        return False
+
+
 def _music(m):
     q = m.group("q").strip()
-    # « lance spotify » / « ouvre discord » = ouvrir une appli, pas de la musique
-    if m.group(1) == "lance" and not m.group(3) and len(q.split()) <= 2:
+    svc = m.group("svc")
+    if svc:  # « lance PNL sur YouTube Music » : forcément de la musique
+        return actions.play_music(q, SERVICES[svc])
+    if q in SERVICES:  # « lance YouTube Music » tout seul = ouvrir le service
         return None
-    svc = m.group(6) or config.load().get("music_service", "youtube")
-    return actions.play_music(q, svc)
+    if m.group(1) in ("lance", "ecoute") and not m.group(3) and _is_app(q):
+        return None  # « lance Discord » = ouvrir l'appli
+    return actions.play_music(q, config.load().get("music_service", "youtube"))
 
 
 def _open(name):

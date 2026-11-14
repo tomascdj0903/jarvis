@@ -34,47 +34,67 @@ class Voice:
         self.oww = Model(wakeword_models=["hey_jarvis"], inference_framework="onnx")
 
     # ---------- écoute ----------
+    def _open(self):
+        return sd.InputStream(device=self.cfg.get("input_device"), samplerate=RATE, channels=1,
+                              dtype="int16", blocksize=CHUNK)
+
     def wait_for_wake(self):
-        """Bloque jusqu'à « Hey/OK Jarvis »."""
+        """Bloque jusqu'à « Hey Jarvis » (ou déclenchement manuel).
+        Garde le flux ouvert et les 1,5 dernières secondes : la commande dite d'une traite n'est pas perdue."""
+        import collections
         self.oww.reset()
         self.trigger.clear()
-        n = 0
-        with sd.InputStream(device=self.cfg.get("input_device"), samplerate=RATE, channels=1, dtype="int16", blocksize=CHUNK) as st:
-            while True:
-                data, _ = st.read(CHUNK)
-                if self.trigger.is_set():
-                    self.trigger.clear()
-                    return "manual"
-                if self.paused or self.speaking.is_set():
-                    continue
-                scores = self.oww.predict(data[:, 0])
-                score = max(scores.values())
-                self.last_score = max(self.last_score * 0.9, score)
-                n += 1
-                if n % 3 == 0:  # ~4 fois/s : l'orbe de veille suit le micro
-                    lvl = float(np.sqrt(np.mean(data.astype(np.float32) ** 2)))
-                    self.on_state("idle", min(1.0, lvl / 3000))
-                if score >= self.cfg["wake_threshold"]:
-                    return "wake"
+        self.stream = self._open(); self.stream.start()
+        ring = collections.deque(maxlen=int(1.5 * RATE / CHUNK))
+        n, hot = 0, 0
+        thr = self.cfg["wake_threshold"]
+        while True:
+            data, _ = self.stream.read(CHUNK)
+            ring.append(data.copy())
+            if self.trigger.is_set():
+                self.trigger.clear(); self.preroll = []
+                return "manual"
+            if self.paused or self.speaking.is_set():
+                continue
+            score = max(self.oww.predict(data[:, 0]).values())
+            self.last_score = max(self.last_score * 0.9, score)
+            n += 1
+            if n % 3 == 0:
+                lvl = float(np.sqrt(np.mean(data.astype(np.float32) ** 2)))
+                self.on_state("idle", min(1.0, lvl / 3000))
+            # déclenche sur un pic franc OU sur deux trames moyennement sûres d'affilée
+            hot = hot + 1 if score >= thr * 0.6 else 0
+            if score >= thr or hot >= 2:
+                self.preroll = []  # le mot de réveil lui-même n'est pas utile à la commande
+                return "wake"
 
-    def record_command(self, max_s=8.0, silence_s=1.0) -> bytes:
-        """Enregistre jusqu'à un silence ; renvoie un WAV."""
-        frames, silent, started = [], 0.0, False
+    def record_command(self, max_s=9.0, silence_s=1.1) -> bytes:
+        """Continue sur le MÊME flux micro (aucune coupure après le réveil), s'arrête au silence."""
+        st = getattr(self, "stream", None)
+        own = st is None
+        if own:
+            st = self._open(); st.start()
+        frames = list(getattr(self, "preroll", []))
+        silent, started = 0.0, False
         t0 = time.time()
-        with sd.InputStream(device=self.cfg.get("input_device"), samplerate=RATE, channels=1, dtype="int16", blocksize=CHUNK) as st:
+        try:
             while time.time() - t0 < max_s:
                 data, _ = st.read(CHUNK)
                 frames.append(data.copy())
                 lvl = float(np.sqrt(np.mean(data.astype(np.float32) ** 2)))
                 self.on_state("listening", min(1.0, lvl / 3000))
-                if lvl > 500:
+                if lvl > 450:
                     started, silent = True, 0.0
                 else:
                     silent += CHUNK / RATE
                 if started and silent >= silence_s:
                     break
-                if not started and time.time() - t0 > 4:
+                if not started and time.time() - t0 > 5:
                     break
+        finally:
+            try: st.stop(); st.close()
+            except Exception: pass
+            self.stream = None
         buf = io.BytesIO()
         with wave.open(buf, "wb") as w:
             w.setnchannels(1); w.setsampwidth(2); w.setframerate(RATE)
@@ -86,7 +106,11 @@ class Voice:
             return requests.post("https://api.groq.com/openai/v1/audio/transcriptions", timeout=30,
                                  headers={"Authorization": f"Bearer {self.cfg['groq_api_key'].strip()}"},
                                  files={"file": ("cmd.wav", wav, "audio/wav")},
-                                 data={"model": model, "language": self.cfg["language"]})
+                                 data={"model": model, "language": self.cfg["language"], "temperature": "0",
+                                       # vocabulaire attendu : aide Whisper sur les noms d'applis et d'artistes
+                                       "prompt": "Jarvis, lance, mets, joue, ouvre, ferme, YouTube, YouTube Music, "
+                                                 "Spotify, Deezer, Discord, Chrome, PNL, Ninho, Jul, SCH, Stromae, "
+                                                 "Aya Nakamura, Dua Lipa, The Weeknd, musique suivante, volume."})
         r = post(self.cfg["stt_model"])
         if r.status_code in (400, 404) and "model" in r.text.lower():
             for alt in ("whisper-large-v3-turbo", "whisper-large-v3"):
@@ -123,11 +147,14 @@ class Voice:
             self.on_state("idle")
 
     def beep(self):
-        try:
-            import winsound
-            winsound.Beep(1320, 70); winsound.Beep(1760, 90)
-        except Exception:
-            pass
+        """Bip en arrière-plan : on n'attend pas la fin du son pour écouter."""
+        def run():
+            try:
+                import winsound
+                winsound.Beep(1320, 60); winsound.Beep(1760, 80)
+            except Exception:
+                pass
+        threading.Thread(target=run, daemon=True).start()
 
 
 def _play_mp3(path):

@@ -65,7 +65,7 @@ class Brain:
             "dans le style du Jarvis d'Iron Man : poli, efficace, légèrement pince-sans-rire. "
             f"Tu t'adresses à lui en l'appelant « {self.cfg['user_name']} ». "
             "Tes réponses sont LUES À VOIX HAUTE : une ou deux phrases courtes, sans markdown, sans liste, sans emoji. "
-            "Utilise les outils dès qu'une action est demandée. « Change de musique » = media next. Pour ouvrir YouTube, YouTube Music, Deezer, Netflix… utilise open_app avec ce nom exact, jamais une recherche web. "
+            "Utilise les outils dès qu'une action est demandée. « Change de musique » = media next. Pour ouvrir YouTube, YouTube Music, Deezer, Netflix… utilise open_app avec ce nom exact, jamais une recherche web. « Lance / mets / joue <artiste ou titre> (sur <service>) » = play_music. Le texte vient d'une transcription vocale : devine le sens le plus probable (noms d'artistes mal orthographiés, etc.) au lieu de demander. "
             f"Date et heure actuelles : {datetime.datetime.now():%A %d/%m/%Y %H:%M}. Réponds en français."
         )
 

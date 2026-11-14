@@ -8,6 +8,8 @@ for n in ("media", "volume", "now", "system", "open_folder"):
     setattr(fake, n, (lambda name: (lambda *a, **k: calls.append((name, a)) or f"{name}:{a}"))(n))
 fake.open_app = lambda n: f"open:{n}"
 fake.play_music = lambda q, s: f"play[{s}]:{q}"
+fake.WEB_APPS = {"youtube music": "", "youtube": "", "deezer": "", "netflix": ""}
+fake._find_app = lambda n: (n, "x") if n in ("spotify", "discord", "brawlhalla") else (None, None)
 fake.SENSITIVE = {("system", "shutdown")}
 sys.modules["jarvis.actions"] = fake; jarvis.actions = fake
 import jarvis.config as config
@@ -26,6 +28,12 @@ CASES = {
     "ouvre Discord": "open:discord",
     "mets du Dua Lipa": "play[youtube]:dua lipa",
     "joue Stromae sur deezer": "play[deezer]:stromae",
+    "Hey Jarvis, lance PNL sur YouTube Music": "play[youtube_music]:pnl",
+    "lance PNL": "play[youtube]:pnl",
+    "lance Brawlhalla": "open:brawlhalla",
+    "mets Ninho sur Spotify": "play[spotify]:ninho",
+    "lance Jul sur YouTube": "play[youtube]:jul",
+    "joue l'album Deux frères de PNL": "play[youtube]:deux freres de pnl",
     "mets la chanson Alors on danse": "play[youtube]:alors on danse",
     "ouvre mes téléchargements": "open_folder:('telechargements',)",
     "raconte-moi une blague": None,
