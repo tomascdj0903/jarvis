@@ -452,9 +452,10 @@ def selftest() -> int:
     step("chiffrement de la clé (DPAPI)", lambda: config._unprotect(config._protect("test")) == "test" or 1/0)
     step("architecture", lambda: ("ARM64 natif" if __import__("platform").machine().upper() == "ARM64" else
                                   __import__("platform").machine()) + (" sur PC ARM64" if __import__("jarvis.updater", fromlist=["x"]).native_arm64() else ""))
+    step("moteurs ONNX (accélération)", lambda: ", ".join(__import__("jarvis.stt_local", fromlist=["x"]).providers()))
     step("dossiers Windows réels", lambda: config.known_folder("Documents"))
     step("contrôle média Windows (winrt)", lambda: f"{len(__import__('jarvis.media', fromlist=['sessions']).sessions())} session(s)")
-    step("modules", lambda: [__import__(f"jarvis.{m}") for m in ("actions", "brain", "router", "settings", "updater", "hud", "voice", "util", "media", "vision", "weather", "macros", "assistant")] and "ok")
+    step("modules", lambda: [__import__(f"jarvis.{m}") for m in ("actions", "brain", "router", "settings", "updater", "hud", "voice", "util", "media", "vision", "weather", "macros", "assistant", "stt_local")] and "ok")
     step("routeur", lambda: __import__("jarvis.router", fromlist=["route"]).route("raconte une blague") is None or 1/0)
     offline = "--offline" in sys.argv
     try:  # test réseau réel (informatif, ne bloque pas la publication)

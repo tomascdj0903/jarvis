@@ -172,6 +172,26 @@ class Wizard:
                                    fg=GREY, bg=BG, font=("Segoe UI", 9))
         self.mic_status.pack(side="left", padx=8)
 
+        label("3 bis · TRANSCRIPTION DE LA VOIX")
+        self.stts = [("auto", "Auto : Groq, et locale si pas d'internet ou quota épuisé"),
+                     ("local", "Locale uniquement (rien n'est envoyé, puce IA ou processeur)"),
+                     ("groq", "Groq uniquement (en ligne)")]
+        self.stt = ttk.Combobox(f, values=[n for _, n in self.stts], state="readonly", style="J.TCombobox",
+                                font=("Segoe UI", 10))
+        self.stt.current(next((i for i, (c, _) in enumerate(self.stts) if c == cfg.get("stt_engine", "auto")), 0))
+        self.stt.pack(fill="x", ipady=4)
+        srow2 = tk.Frame(f, bg=BG); srow2.pack(fill="x", pady=(4, 0))
+        self._btn(srow2, "Installer / tester la transcription locale", self.setup_local_stt).pack(side="left")
+        self.stt_status = tk.Label(f, text="", fg=GREY, bg=BG, font=("Segoe UI", 9), anchor="w", wraplength=520,
+                                   justify="left")
+        self.stt_status.pack(fill="x")
+        try:
+            from . import stt_local
+            if stt_local.ready():
+                self.stt_status.config(text="Modèle local installé.", fg=GREEN)
+        except Exception:
+            pass
+
         label("4 · MUSIQUE — où lancer « mets du Dua Lipa »")
         self.services = [("youtube", "YouTube"), ("youtube_music", "YouTube Music"),
                          ("spotify", "Spotify (appli)"), ("deezer", "Deezer")]
@@ -304,6 +324,25 @@ class Wizard:
                 self.w.after(0, lambda: self.mic_status.config(text=f"Voix indisponible : {e}", fg=RED))
         threading.Thread(target=run, daemon=True).start()
 
+    def setup_local_stt(self):
+        def run():
+            from . import stt_local
+            try:
+                if not stt_local.ready():
+                    stt_local.download(lambda p: self.w.after(0, lambda: self.stt_status.config(
+                        text=f"Téléchargement du modèle Whisper (~75 Mo)… {int(p * 100)} %", fg=GREY)))
+                eng = stt_local.engine_name()
+                import time
+                import numpy as np
+                t0 = time.time()
+                stt_local.transcribe_pcm(np.zeros(16000, dtype=np.int16))
+                ms = int((time.time() - t0) * 1000)
+                msg, col = f"✓ Transcription locale prête — moteur : {eng} — {ms} ms pour 1 s d'audio.", GREEN
+            except Exception as e:
+                msg, col = f"✗ Transcription locale indisponible : {e}", RED
+            self.w.after(0, lambda: self.stt_status.config(text=msg, fg=col))
+        threading.Thread(target=run, daemon=True).start()
+
     def test_planning(self):
         self.pstatus.config(text="Test en cours…", fg=GREY)
 
@@ -387,6 +426,7 @@ class Wizard:
                         log_utterances=self.logu.get(), pause_when_locked=self.lockp.get(),
                         conversation_mode=self.conv.get(), duck_music=self.duck.get(),
                         morning_briefing=self.brief.get(), planning_key=self.pkey.get().strip(),
+                        stt_engine=self.stts[max(0, self.stt.current())][0],
                         language=self.langs[max(0, self.lang.current())][0],
                         **{k: e.get().strip() for k, e in self.extra.items()},
                         wake_threshold=round(0.75 - self.sens.get() * 0.06, 2), _autostart=self.autostart.get())

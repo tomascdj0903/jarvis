@@ -57,6 +57,7 @@ DEFAULTS = {
     "conversation_mode": True,
     "duck_music": True,
     "morning_briefing": True,
+    "stt_engine": "auto",
     "planning_url": "https://planning-partage-xi.vercel.app",
     "planning_key": "",
     "show_hud": True,

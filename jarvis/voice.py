@@ -110,6 +110,19 @@ class Voice:
         return buf.getvalue()
 
     def transcribe(self, wav: bytes) -> str:
+        """Moteur choisi dans les Réglages : « auto » = Groq, puis local si Groq échoue (hors ligne, quota)."""
+        mode = self.cfg.get("stt_engine", "auto")
+        from . import stt_local
+        if mode == "local" and stt_local.ready():
+            return stt_local.transcribe_wav(wav, self.cfg.get("language", "fr"))
+        try:
+            return self._transcribe_groq(wav)
+        except Exception:
+            if stt_local.ready():
+                return stt_local.transcribe_wav(wav, self.cfg.get("language", "fr"))
+            raise
+
+    def _transcribe_groq(self, wav: bytes) -> str:
         def post(model):
             return requests.post("https://api.groq.com/openai/v1/audio/transcriptions", timeout=30,
                                  headers={"Authorization": f"Bearer {self.cfg['groq_api_key'].strip()}"},
