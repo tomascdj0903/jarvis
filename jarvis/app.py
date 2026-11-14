@@ -243,16 +243,50 @@ class Jarvis:
                     if updater.install(url):
                         self.running = False
                         self.root.destroy()
+                        os._exit(0)
                     else:
                         messagebox.showinfo("J.A.R.V.I.S.", "Mode script : relance INSTALLER JARVIS.bat après avoir téléchargé la nouvelle version.")
                 except Exception as e:
                     messagebox.showerror("J.A.R.V.I.S.", f"Échec de la mise à jour :\n{e}")
         self.root.after(0, ask)
 
+    def update_before_start(self) -> bool:
+        """Vérifie les mises à jour avant de lancer quoi que ce soit. True = on quitte pour mettre à jour."""
+        from . import updater, __version__
+        info = updater.check()
+        if not info or not getattr(sys, "frozen", False):
+            return False
+        tag, url, notes = info
+        if not messagebox.askyesno("J.A.R.V.I.S. — mise à jour",
+                                   f"Nouvelle version {tag} disponible (actuelle : v{__version__}).\n\n{notes}\n\n"
+                                   "Installer maintenant ? Jarvis redémarrera tout seul."):
+            return False
+        w = tk.Toplevel(self.root)
+        w.title("J.A.R.V.I.S."); w.configure(bg="#03060C"); w.attributes("-topmost", True)
+        w.geometry(f"360x110+{(w.winfo_screenwidth()-360)//2}+{(w.winfo_screenheight()-110)//2}")
+        lbl = tk.Label(w, text="Téléchargement de la mise à jour…", fg="#E8FBFF", bg="#03060C",
+                       font=("Segoe UI", 11)); lbl.pack(pady=(22, 10))
+        bar = tk.Canvas(w, width=300, height=6, bg="#12324A", highlightthickness=0); bar.pack()
+
+        def prog(p):
+            bar.delete("all"); bar.create_rectangle(0, 0, int(300 * p), 6, fill="#29D8FF", width=0)
+            lbl.config(text=f"Téléchargement de la mise à jour… {int(p*100)} %")
+            w.update()
+        try:
+            ok = updater.install(url, prog)
+            lbl.config(text="Installation… Jarvis va redémarrer."); w.update()
+            return ok
+        except Exception as e:
+            log.exception("update")
+            messagebox.showerror("J.A.R.V.I.S.", f"Échec du téléchargement de la mise à jour :\n{e}")
+            return False
+
     def run(self):
+        if self.update_before_start():
+            self.root.destroy()
+            os._exit(0)
         if not self.ensure_key():
             return
-        threading.Thread(target=self.check_update, daemon=True).start()
         splash(self.root, self.ready)
         threading.Thread(target=self.loop, daemon=True).start()
         self.tray()

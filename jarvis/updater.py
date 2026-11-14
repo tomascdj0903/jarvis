@@ -59,13 +59,27 @@ def install(url: str, progress=lambda p: None) -> bool:
     inner = [p for p in new.iterdir() if p.is_dir()]
     if len(inner) == 1 and (inner[0] / "Jarvis.exe").exists():
         new = inner[0]
-    bat = tmp / "update.bat"
-    bat.write_text(
-        "@echo off\r\n"
-        f"taskkill /PID {os.getpid()} /F >nul 2>nul\r\n"
-        "timeout /t 2 /nobreak >nul\r\n"
-        f'robocopy "{new}" "{app_dir}" /E /IS /IT /NFL /NDL /NJH /NJS >nul\r\n'
-        f'start "" "{app_dir / "Jarvis.exe"}"\r\n',
-        encoding="ascii", errors="ignore")
-    subprocess.Popen(["cmd", "/c", str(bat)], creationflags=0x08000000 | 0x00000008)
+    log = Path(os.environ.get("APPDATA", tempfile.gettempdir())) / "Jarvis" / "update.log"
+    ps1 = tmp / "update.ps1"
+    # PowerShell en UTF-8 avec BOM : gère les chemins avec accents
+    ps1.write_text(f"""
+$ErrorActionPreference = 'Continue'
+$log = '{log}'
+function L($m) {{ Add-Content -LiteralPath $log -Value ("$(Get-Date -f s) " + $m) }}
+L 'Mise a jour : attente de la fermeture de Jarvis (PID {os.getpid()})'
+try {{ Wait-Process -Id {os.getpid()} -Timeout 20 -ErrorAction SilentlyContinue }} catch {{}}
+Get-Process -Name Jarvis -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+Start-Sleep -Seconds 2
+$src = '{new}'; $dst = '{app_dir}'
+$ok = $false
+for ($i = 1; $i -le 10 -and -not $ok; $i++) {{
+    robocopy $src $dst /E /IS /IT /R:2 /W:1 /NFL /NDL /NJH /NJS | Out-Null
+    if ($LASTEXITCODE -lt 8) {{ $ok = $true }} else {{ L "Copie echouee (code $LASTEXITCODE), essai $i"; Start-Sleep -Seconds 2 }}
+}}
+if ($ok) {{ L 'Mise a jour installee.' }} else {{ L 'ECHEC de la mise a jour.' }}
+Start-Process -FilePath (Join-Path $dst 'Jarvis.exe')
+""", encoding="utf-8-sig")
+    subprocess.Popen(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden",
+                      "-File", str(ps1)], creationflags=0x08000000 | 0x00000008 | 0x00000200,
+                     close_fds=True)
     return True
