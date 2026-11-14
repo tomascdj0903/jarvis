@@ -236,8 +236,11 @@ def correct_query(query: str) -> str:
         r = requests.get("https://suggestqueries.google.com/complete/search", timeout=5, headers=UA,
                          params={"client": "firefox", "ds": "yt", "hl": "fr", "q": query}).json()
         sug = r[1] if len(r) > 1 else []
-        if sug:
-            return sug[0]
+        n = len(query.split())
+        for cand in sug:
+            words = cand.split()[:n]  # même nombre de mots : on corrige, on n'ajoute rien (« slowed », « lyrics »…)
+            if len(words) == n:
+                return " ".join(words)
     except Exception:
         pass
     return query
@@ -432,21 +435,43 @@ def _allowed(p: Path, cfg) -> bool:
     return any(str(p).lower().startswith(str(Path(f).resolve()).lower()) for f in cfg["allowed_folders"])
 
 
-def find_files(query: str, cfg) -> str:
-    q = query.lower()
+def _key(name: str) -> str:
+    """« Jarvis-Windows », « jarvis windows », « Jarvis_Windows.zip » -> « jarviswindows »"""
+    import re
+    return re.sub(r"[^a-z0-9]", "", _norm_txt(name))
+
+
+def _search(query: str, cfg, dirs_only=False, limit=15, depth=4):
+    q = _key(query)
+    if not q:
+        return []
     hits = []
     for folder in cfg["allowed_folders"]:
         root = Path(folder)
         if not root.exists():
             continue
-        for p in root.rglob("*"):
-            if q in p.name.lower():
-                hits.append(str(p))
-                if len(hits) >= 15:
-                    break
-        if len(hits) >= 15:
-            break
-    return "\n".join(hits) or "Aucun fichier trouvé."
+        stack = [(root, 0)]
+        while stack:
+            d, lv = stack.pop()
+            try:
+                entries = list(os.scandir(d))
+            except OSError:
+                continue
+            for e in entries:
+                if e.name.startswith((".", "$")) or e.name in ("node_modules", "_internal", "AppData"):
+                    continue
+                is_dir = e.is_dir(follow_symlinks=False)
+                k = _key(Path(e.name).stem if not is_dir else e.name)
+                if (not dirs_only or is_dir) and (q == k or q in k):
+                    hits.append((0 if q == k else 1, 0 if is_dir else 1, len(k), e.path))
+                if is_dir and lv < depth:
+                    stack.append((e.path, lv + 1))
+    hits.sort()
+    return [h[3] for h in hits[:limit]]
+
+
+def find_files(query: str, cfg) -> str:
+    return "\n".join(_search(query, cfg)) or "Aucun fichier trouvé."
 
 
 def open_path(path: str, cfg) -> str:
@@ -459,16 +484,20 @@ def open_path(path: str, cfg) -> str:
     return f"{p.name} ouvert."
 
 
-def open_folder(name: str) -> str:
-    known = {"bureau": "Desktop", "documents": "Documents", "téléchargements": "Downloads",
-             "telechargements": "Downloads", "musique": "Music", "images": "Pictures", "vidéos": "Videos",
-             "videos": "Videos"}
-    sub = known.get(name.lower(), name)
-    p = Path.home() / sub
-    if p.exists():
-        os.startfile(str(p))
+def open_folder(name: str, cfg=None) -> str:
+    known = {"bureau": "Desktop", "documents": "Documents", "telechargements": "Downloads",
+             "téléchargements": "Downloads", "musique": "Music", "images": "Pictures", "vidéos": "Videos",
+             "videos": "Videos", "photos": "Pictures"}
+    sub = known.get(name.lower().strip())
+    if sub and (Path.home() / sub).exists():
+        os.startfile(str(Path.home() / sub)); bring_to_front(exes=("explorer.exe",), delay=0.8)
         return f"Dossier {name} ouvert."
-    return f"Dossier {name} introuvable."
+    from . import config as _c
+    hits = _search(name, cfg or _c.load(), dirs_only=True, limit=1)
+    if hits:
+        os.startfile(hits[0]); bring_to_front(exes=("explorer.exe",), delay=0.8)
+        return f"Dossier {Path(hits[0]).name} ouvert."
+    return f"Je ne trouve aucun dossier nommé « {name} »."
 
 
 def organize_downloads(cfg) -> str:

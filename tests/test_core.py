@@ -67,6 +67,7 @@ CASES = {
     "mets la chanson Alors on danse": f"play[{DEF}]:alors on danse",
     "j'aimerais écouter Aya Nakamura s'il te plaît": f"play[{DEF}]:aya nakamura",
     "ouvre mes téléchargements": "open_folder:('telechargements',)",
+    "ouvre le dossier Jarvis Windows": "open_folder:('jarvis windows',)",
     # vers l'IA
     "raconte-moi une blague": None,
     "qui a gagné la coupe du monde 2018": None,
@@ -114,6 +115,30 @@ def test_brain_tool_loop():
     assert len(b.history) == 2
 
 
+def test_search_and_correct():
+    import importlib, tempfile, os as _os
+    sys.modules.pop("jarvis.actions", None)
+    real = importlib.import_module("jarvis.actions")
+    root = tempfile.mkdtemp()
+    for d in ("Jarvis-Windows/Jarvis", "BotGlobalExam_v2", "CSR"):
+        _os.makedirs(_os.path.join(root, d), exist_ok=True)
+    open(_os.path.join(root, "Jarvis-Windows.zip"), "w").close()
+    cfg = {"allowed_folders": [root]}
+    assert real._search("Jarvis Windows", cfg, dirs_only=True)[0].endswith("Jarvis-Windows")
+    assert real._search("jarvis_windows", cfg)[0].endswith("Jarvis-Windows")
+    assert real._search("bot global exam", cfg, dirs_only=True)[0].endswith("BotGlobalExam_v2")
+    class R:
+        def json(self): return ["nahar pnl", ["naha pnl slowed", "naha pnl", "naha pnl lyrics"]]
+    real.requests = None
+    import requests as rq
+    old = rq.get; rq.get = lambda *a, **k: R()
+    try:
+        assert real.correct_query("nahar pnl") == "naha pnl", real.correct_query("nahar pnl")
+    finally:
+        rq.get = old
+    sys.modules["jarvis.actions"] = fake; jarvis.actions = fake
+
+
 if __name__ == "__main__":
     pass
 
@@ -139,6 +164,30 @@ def test_open_app_real():
     sys.modules["jarvis.actions"] = fake; jarvis.actions = fake
 
 
+def test_search_and_correct():
+    import importlib, tempfile, os as _os
+    sys.modules.pop("jarvis.actions", None)
+    real = importlib.import_module("jarvis.actions")
+    root = tempfile.mkdtemp()
+    for d in ("Jarvis-Windows/Jarvis", "BotGlobalExam_v2", "CSR"):
+        _os.makedirs(_os.path.join(root, d), exist_ok=True)
+    open(_os.path.join(root, "Jarvis-Windows.zip"), "w").close()
+    cfg = {"allowed_folders": [root]}
+    assert real._search("Jarvis Windows", cfg, dirs_only=True)[0].endswith("Jarvis-Windows")
+    assert real._search("jarvis_windows", cfg)[0].endswith("Jarvis-Windows")
+    assert real._search("bot global exam", cfg, dirs_only=True)[0].endswith("BotGlobalExam_v2")
+    class R:
+        def json(self): return ["nahar pnl", ["naha pnl slowed", "naha pnl", "naha pnl lyrics"]]
+    real.requests = None
+    import requests as rq
+    old = rq.get; rq.get = lambda *a, **k: R()
+    try:
+        assert real.correct_query("nahar pnl") == "naha pnl", real.correct_query("nahar pnl")
+    finally:
+        rq.get = old
+    sys.modules["jarvis.actions"] = fake; jarvis.actions = fake
+
+
 if __name__ == "__main__":
-    test_router(); test_weather_routing(); test_versions(); test_brain_tool_loop(); test_open_app_real()
+    test_router(); test_weather_routing(); test_versions(); test_brain_tool_loop(); test_open_app_real(); test_search_and_correct()
     print(f"TOUS LES TESTS OK ({len(CASES)} phrases)")

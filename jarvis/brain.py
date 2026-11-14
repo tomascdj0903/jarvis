@@ -40,7 +40,8 @@ TOOLS = [
           {"query": S}, ["query"]),
     _tool("find_files", "Cherche des fichiers par nom dans les dossiers autorisés.", {"query": S}, ["query"]),
     _tool("open_path", "Ouvre un fichier ou dossier par son chemin complet.", {"path": S}, ["path"]),
-    _tool("open_folder", "Ouvre un dossier courant : bureau, documents, téléchargements, musique, images, vidéos.",
+    _tool("open_folder", "Ouvre un dossier par son nom (bureau, téléchargements… ou n'importe quel dossier de l'utilisateur, "
+          "recherché automatiquement, même mal orthographié ou sans tirets).",
           {"name": S}, ["name"]),
     _tool("organize_downloads", "Range le dossier Téléchargements par type de fichier."),
     _tool("system", "Action système.",
@@ -132,7 +133,7 @@ class Brain:
             "play_music": lambda: a.play_music(args["query"], cfg.get("music_service", "youtube")),
             "find_files": lambda: a.find_files(args["query"], cfg),
             "open_path": lambda: a.open_path(args["path"], cfg),
-            "open_folder": lambda: a.open_folder(args["name"]),
+            "open_folder": lambda: a.open_folder(args["name"], cfg),
             "organize_downloads": lambda: a.organize_downloads(cfg),
             "system": lambda: a.system(args["action"]),
             "web_search": lambda: a.web_search(args["query"]),

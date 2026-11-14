@@ -69,8 +69,8 @@ RULES = [
      lambda m: actions.play_music(_q(m.group("q")), SERVICES[m.group("svc")])),
     (r"^(lance|ouvre|demarre) (?!le dossier|mes |mon dossier|le site|youtube\.|google\.)(.+)$",
      lambda m: _open(m.group(2))),
-    (r"^(ouvre|affiche) (mes |le dossier |mon dossier )(bureau|documents|telechargements|musique|images|videos)$",
-     lambda m: actions.open_folder(m.group(3))),
+    (r"^(ouvre|affiche|montre)( moi)? (mes |le dossier |mon dossier |les dossiers? )(?P<f>.+)$",
+     lambda m: actions.open_folder(m.group("f"))),
 ]
 
 
