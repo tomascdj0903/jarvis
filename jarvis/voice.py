@@ -82,11 +82,21 @@ class Voice:
         return buf.getvalue()
 
     def transcribe(self, wav: bytes) -> str:
-        r = requests.post("https://api.groq.com/openai/v1/audio/transcriptions", timeout=30,
-                          headers={"Authorization": f"Bearer {self.cfg['groq_api_key']}"},
-                          files={"file": ("cmd.wav", wav, "audio/wav")},
-                          data={"model": self.cfg["stt_model"], "language": self.cfg["language"]})
-        r.raise_for_status()
+        def post(model):
+            return requests.post("https://api.groq.com/openai/v1/audio/transcriptions", timeout=30,
+                                 headers={"Authorization": f"Bearer {self.cfg['groq_api_key'].strip()}"},
+                                 files={"file": ("cmd.wav", wav, "audio/wav")},
+                                 data={"model": model, "language": self.cfg["language"]})
+        r = post(self.cfg["stt_model"])
+        if r.status_code in (400, 404) and "model" in r.text.lower():
+            for alt in ("whisper-large-v3-turbo", "whisper-large-v3"):
+                if alt != self.cfg["stt_model"]:
+                    r = post(alt)
+                    if r.ok:
+                        self.cfg["stt_model"] = alt
+                        break
+        if r.status_code >= 400:
+            raise RuntimeError(f"Transcription {r.status_code} : {r.text[:150]}")
         return r.json().get("text", "").strip()
 
     def listen(self) -> str:

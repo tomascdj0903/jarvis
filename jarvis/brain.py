@@ -8,6 +8,14 @@ import requests
 from . import actions
 
 API_URL = "https://api.groq.com/openai/v1/chat/completions"
+MODELS_URL = "https://api.groq.com/openai/v1/models"
+# Ordre de préférence (tous gèrent l'appel d'outils chez Groq)
+PREFERRED = ["openai/gpt-oss-120b", "llama-3.3-70b-versatile", "openai/gpt-oss-20b",
+             "moonshotai/kimi-k2-instruct", "qwen/qwen3-32b", "llama-3.1-8b-instant"]
+
+
+class GroqError(Exception):
+    pass
 
 
 def _tool(name, desc, props=None, required=None):
@@ -60,13 +68,45 @@ class Brain:
             f"Date et heure actuelles : {datetime.datetime.now():%A %d/%m/%Y %H:%M}. Réponds en français."
         )
 
-    def _call(self, messages):
-        r = requests.post(API_URL, timeout=30,
-                          headers={"Authorization": f"Bearer {self.cfg['groq_api_key']}"},
-                          json={"model": self.cfg["llm_model"], "messages": messages,
-                                "tools": TOOLS, "tool_choice": "auto", "temperature": 0.4,
-                                "max_tokens": 300})
+    def _headers(self):
+        return {"Authorization": f"Bearer {self.cfg['groq_api_key'].strip()}"}
+
+    def pick_model(self):
+        """Choisit un modèle réellement disponible sur le compte Groq."""
+        r = requests.get(MODELS_URL, headers=self._headers(), timeout=15)
+        if r.status_code == 401:
+            raise GroqError("401 : clé API Groq invalide")
         r.raise_for_status()
+        ids = {m["id"] for m in r.json().get("data", []) if m.get("active", True)}
+        for m in PREFERRED:
+            if m in ids:
+                return m
+        chat = sorted(i for i in ids if "whisper" not in i and "tts" not in i and "guard" not in i)
+        if not chat:
+            raise GroqError("aucun modèle de discussion disponible sur ce compte Groq")
+        return chat[0]
+
+    def _post(self, messages):
+        return requests.post(API_URL, timeout=30, headers=self._headers(),
+                             json={"model": self.cfg["llm_model"], "messages": messages,
+                                   "tools": TOOLS, "tool_choice": "auto", "temperature": 0.4,
+                                   "max_tokens": 400})
+
+    def _call(self, messages):
+        r = self._post(messages)
+        if r.status_code in (400, 404) and "model" in r.text.lower():
+            # modèle retiré ou inaccessible : on en choisit un autre et on le garde
+            from . import config
+            new = self.pick_model()
+            self.cfg["llm_model"] = new
+            config.save(self.cfg)
+            r = self._post(messages)
+        if r.status_code >= 400:
+            try:
+                detail = r.json().get("error", {}).get("message", r.text)
+            except Exception:
+                detail = r.text
+            raise GroqError(f"{r.status_code} : {detail[:150]}")
         return r.json()["choices"][0]["message"]
 
     def _run_tool(self, name, args):

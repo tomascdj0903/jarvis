@@ -146,6 +146,14 @@ class Jarvis:
             self.ready.set()
             return
         self.brain = Brain(self.cfg, self.say, self.confirm)
+        try:  # au démarrage : vérifie que le modèle configuré existe encore
+            model = self.brain.pick_model()
+            if model != self.cfg.get("llm_model"):
+                log.info("modèle %s -> %s", self.cfg.get("llm_model"), model)
+                self.cfg["llm_model"] = model
+                config.save(self.cfg)
+        except Exception as e:
+            log.warning("pick_model: %s", e)
         threading.Thread(target=actions.scan_apps, daemon=True).start()
         self.ready.set()
         threading.Thread(target=self.hotkey_thread, daemon=True).start()
