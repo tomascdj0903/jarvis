@@ -493,6 +493,12 @@ def main():
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("Jarvis.Assistant")
     except Exception:
         pass
+    from .updater import updating
+    if updating():  # une mise à jour s'installe : ne surtout pas bloquer ses fichiers
+        r = tk.Tk(); r.withdraw()
+        messagebox.showinfo("J.A.R.V.I.S.", "Une mise à jour est en cours d'installation.\n"
+                            "Jarvis redémarrera tout seul dans quelques secondes.")
+        return
     if not single_instance():
         r = tk.Tk(); r.withdraw()
         try:

@@ -22,7 +22,8 @@ POLITE = [
 INFINITIVES = {"mettre": "mets", "lancer": "lance", "jouer": "joue", "ecouter": "ecoute", "ouvrir": "ouvre",
                "demarrer": "demarre", "fermer": "ferme", "monter": "monte", "baisser": "baisse", "couper": "coupe",
                "passer": "passe", "chercher": "cherche", "mettre en pause": "pause"}
-ALIASES = [(r"\byoutube musique\b", "youtube music"), (r"\byou tube\b", "youtube"), (r"\bdeezeur\b", "deezer"),
+ALIASES = [(r"\bcloud ?code\b", "claude code"), (r"\b(cloud|clode|clod|klode) (ia|ai)\b", "claude"),
+           (r"\b(sur|avec|dans|ouvre|lance) (cloud|clode|clod|klode)$", r"\1 claude"),(r"\byoutube musique\b", "youtube music"), (r"\byou tube\b", "youtube"), (r"\bdeezeur\b", "deezer"),
            (r"\bspotifaille\b", "spotify"), (r"\bytb\b", "youtube")]
 FILLER = r"^(une |un |la |le |les |des |du |de la |de l'|l'|de )?(musique|chanson|son|sons|titre|morceau|clip|video|album|playlist)s? (de |d'|du |des )?"
 
@@ -71,7 +72,23 @@ def _timer(t):
     return assistant.add_reminder("minuteur terminé", when).replace("je vous le rappelle", "minuteur lancé, je vous préviens")
 
 
+AI_CHATS = {"claude": "https://claude.ai/new", "claude code": "https://claude.ai/code",
+            "chatgpt": "https://chatgpt.com/", "chat gpt": "https://chatgpt.com/", "gemini": "https://gemini.google.com/app",
+            "perplexity": "https://www.perplexity.ai/", "mistral": "https://chat.mistral.ai/chat", "le chat": "https://chat.mistral.ai/chat"}
+
+
+def _new_chat(m):
+    svc = m.group("ai").strip()
+    url = AI_CHATS.get(svc)
+    if not url:
+        return None
+    actions.open_url(url)
+    return f"Nouvelle conversation ouverte sur {svc.title()}."
+
+
 RULES = [
+    (r"(nouveau|nouvelle) (chat|conversation|discussion|session)( (sur|avec|dans))? (?P<ai>claude code|claude|chat ?gpt|gemini|perplexity|mistral|le chat)\b",
+     _new_chat),
     (r"\b(devoirs?|controles?)\b.*\b(aujourd'hui|demain|a faire|du jour|de nico|reste|rappel)|^(mes |les |quels sont les |c'est quoi les )?devoirs\b",
      lambda m: __import__("jarvis.assistant", fromlist=["x"]).planning_devoirs()),
     (r"^(ouvre|lance|affiche)( le| mon)? planning( partage)?$", lambda m: actions.open_app("planning partage")),
@@ -156,6 +173,11 @@ def _music(m):
         return None  # « lance YouTube Music » tout seul = ouvrir le service
     if m.group("verb") in ("lance", "ecoute", "cherche") and _is_app(raw):
         return None  # « lance Discord » = ouvrir l'appli
+    NOT_MUSIC = ("nouveau", "nouvelle", "chat", "conversation", "onglet", "fenetre", "page", "site", "recherche",
+                 "document", "fichier", "mail", "message", "appel", "partie", "jeu", "minuteur", "rappel", "programme",
+                 "logiciel", "application", "appli", "projet", "session", "film", "serie")
+    if m.group("verb") in ("lance", "cherche") and (len(raw.split()) >= 4 or any(w in raw.split() for w in NOT_MUSIC)):
+        return None  # phrase qui ne ressemble pas à un titre : l'IA décide
     if m.group("verb") == "cherche":
         return None
     return actions.play_music(_q(raw), config.load().get("music_service", "youtube"))

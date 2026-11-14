@@ -22,9 +22,13 @@ def cleanup_temp():
     """Supprime les dossiers de mise à jour des fois précédentes (~350 Mo chacun)."""
     import shutil
     cur = Path(sys.executable).resolve()
+    import time
+    if updating():
+        return
     for d in Path(tempfile.gettempdir()).glob("jarvis_upd_*"):
         try:
-            if d not in cur.parents:  # jamais le dossier d'où l'on s'exécute
+            # jamais le dossier d'où l'on s'exécute, ni une mise à jour récente (peut-être en cours)
+            if d not in cur.parents and time.time() - d.stat().st_mtime > 3600:
                 shutil.rmtree(d, ignore_errors=True)
         except Exception:
             pass
@@ -129,6 +133,24 @@ def install(url: str, progress=lambda p: None) -> bool:
 
 
 LOG = Path(os.environ.get("APPDATA", tempfile.gettempdir())) / "Jarvis" / "update.log"
+LOCK = Path(os.environ.get("APPDATA", tempfile.gettempdir())) / "Jarvis" / "updating.lock"
+
+
+def updating() -> bool:
+    """Vrai si une mise à jour est en train de s'installer (verrou de moins de 10 minutes)."""
+    import time
+    try:
+        return LOCK.exists() and time.time() - LOCK.stat().st_mtime < 600
+    except OSError:
+        return False
+
+
+def _kill_installed(dst: Path):
+    """Ferme TOUS les Jarvis lancés depuis le dossier d'installation (sauf ce processus)."""
+    ps = ("Get-Process -Name Jarvis -ErrorAction SilentlyContinue | "
+          f"Where-Object {{ $_.Id -ne {os.getpid()} -and $_.Path -like '{dst}\\*' }} | "
+          "Stop-Process -Force -ErrorAction SilentlyContinue")
+    subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, creationflags=0x08000000)
 
 
 def _log(msg):
@@ -145,13 +167,27 @@ def apply_update(src: str, dst: str, pid: str):
     import time
     src, dst = Path(src), Path(dst)
     _log(f"application de la mise à jour {src} -> {dst}")
+    LOCK.parent.mkdir(parents=True, exist_ok=True)
+    LOCK.write_text(str(os.getpid()))
+    try:
+        return _apply(src, dst, pid)
+    finally:
+        try:
+            LOCK.unlink()
+        except OSError:
+            pass
+
+
+def _apply(src, dst, pid):
+    import ctypes
+    import shutil
+    import time
     k32 = ctypes.windll.kernel32
     h = k32.OpenProcess(0x00100000, False, int(pid))  # SYNCHRONIZE
     if h:
         k32.WaitForSingleObject(h, 20000)
         k32.CloseHandle(h)
-    subprocess.run(["taskkill", "/IM", "Jarvis.exe", "/F", "/FI", f"PID ne {os.getpid()}"],
-                   capture_output=True, creationflags=0x08000000)
+    _kill_installed(dst)
     time.sleep(1.5)
     # 1. le nouveau Jarvis se teste lui-même AVANT de remplacer quoi que ce soit
     t = subprocess.run([str(src / "Jarvis.exe"), "--selftest", "--offline"], capture_output=True, timeout=120)
@@ -171,6 +207,7 @@ def apply_update(src: str, dst: str, pid: str):
     last = None
     for attempt in range(15):
         try:
+            _kill_installed(dst)  # au cas où Jarvis aurait été relancé entre-temps
             shutil.copytree(src, dst, dirs_exist_ok=True)
             _log("mise à jour installée")
             subprocess.Popen([str(dst / "Jarvis.exe")], cwd=str(dst), creationflags=0x00000008, close_fds=True)
@@ -182,6 +219,7 @@ def apply_update(src: str, dst: str, pid: str):
     _log(f"ÉCHEC : {last}")
     if backup and backup.exists():  # 3. retour à la version précédente
         try:
+            _kill_installed(dst); time.sleep(1)
             shutil.copytree(backup, dst, dirs_exist_ok=True)
             _log("version précédente restaurée")
             subprocess.Popen([str(dst / "Jarvis.exe")], cwd=str(dst), creationflags=0x00000008, close_fds=True)

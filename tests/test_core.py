@@ -6,8 +6,10 @@ calls = []
 fake = types.ModuleType("jarvis.actions")
 for n in ("media", "volume", "now", "system", "open_folder"):
     setattr(fake, n, (lambda name: (lambda *a, **k: calls.append((name, a)) or f"{name}:{a}"))(n))
-fake.open_app = lambda n: f"open:{n}"
+KNOWN = ("spotify", "youtube music", "youtube", "discord", "brawlhalla", "planning partage")
+fake.open_app = lambda n: f"open:{n}" if n in KNOWN else f"Application « {n} » introuvable."
 fake.play_music = lambda q, s: f"play[{s}]:{q}"
+fake.open_url = lambda u: None
 fake.resume = lambda: "RESUME"; fake.pause_music = lambda: "PAUSE"; fake.what_is_playing = lambda: "NOWPLAYING"
 fake.WEB_APPS = {"youtube music": "", "youtube": "", "deezer": "", "netflix": ""}
 fake._find_app = lambda n: (n, "x") if n in ("spotify", "discord", "brawlhalla") else (None, None)
@@ -74,6 +76,12 @@ CASES = {
     "j'aimerais écouter Aya Nakamura s'il te plaît": f"play[{DEF}]:aya nakamura",
     "ouvre mes téléchargements": "open_folder:('telechargements',)",
     "ouvre le dossier Jarvis Windows": "open_folder:('jarvis windows',)",
+    # IA / pas de la musique
+    "lance un nouveau chat sur Claude IA.": "AICHAT",
+    "J'ai envie de lancer un nouveau chat sur CloudCode.": "AICHAT",
+    "lance un nouveau chat sur Cloud.": "AICHAT",
+    "ouvre une nouvelle conversation ChatGPT": "AICHAT",
+    "lance une partie de Fortnite avec mes potes": None,
     # vers l'IA
     "raconte-moi une blague": None,
     "qui a gagné la coupe du monde 2018": None,
@@ -82,7 +90,8 @@ CASES = {
 
 
 def test_router():
-    bad = [(p, route(p), w) for p, w in CASES.items() if route(p) != w]
+    norm = lambda r: "AICHAT" if isinstance(r, str) and r.startswith("Nouvelle conversation") else r
+    bad = [(p, route(p), w) for p, w in CASES.items() if norm(route(p)) != w]
     for b in bad:
         print("ÉCHEC", b)
     assert not bad, f"{len(bad)} phrases mal comprises"
