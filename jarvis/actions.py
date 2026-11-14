@@ -85,15 +85,39 @@ def _find_app(name: str):
     n = name.lower().strip()
     if n in _APPS:
         return n, _APPS[n]
-    cands = [k for k in _APPS if n in k] or [k for k in _APPS if all(w in k for w in n.split())]
+    words = [w for w in n.split() if len(w) > 1]
+    cands = [k for k in _APPS if n in k] or ([k for k in _APPS if all(w in k for w in words)] if words else [])
     if cands:
         best = min(cands, key=len)
         return best, _APPS[best]
     return None, None
 
 
+# Services web connus : ouverts directement, jamais confondus avec autre chose
+WEB_APPS = {
+    "youtube music": "https://music.youtube.com", "yt music": "https://music.youtube.com",
+    "youtube": "https://www.youtube.com", "deezer": "https://www.deezer.com",
+    "spotify web": "https://open.spotify.com", "netflix": "https://www.netflix.com",
+    "prime video": "https://www.primevideo.com", "disney": "https://www.disneyplus.com",
+    "twitch": "https://www.twitch.tv", "gmail": "https://mail.google.com",
+    "google drive": "https://drive.google.com", "chatgpt": "https://chatgpt.com",
+    "claude": "https://claude.ai", "instagram": "https://www.instagram.com",
+    "whatsapp web": "https://web.whatsapp.com", "github": "https://github.com",
+    "soundcloud": "https://soundcloud.com", "canva": "https://www.canva.com",
+}
+
+
 def open_app(name: str) -> str:
-    key, target = _find_app(name)
+    import webbrowser
+    n = name.lower().strip().removesuffix(".").strip()
+    if not _APPS:
+        scan_apps()
+    if n in _APPS:                       # 1. appli installée, nom exact
+        os.startfile(_APPS[n]); return f"{n} lancé."
+    for k in sorted(WEB_APPS, key=len, reverse=True):  # 2. service web connu
+        if k in n:
+            webbrowser.open(WEB_APPS[k]); return f"{k.title()} ouvert."
+    key, target = _find_app(n)           # 3. appli installée, nom approché
     if not target:
         return f"Application « {name} » introuvable."
     os.startfile(target)
