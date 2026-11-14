@@ -1,0 +1,257 @@
+"""Tout ce que Jarvis sait faire sur le PC. Chaque fonction renvoie un texte court
+que le cerveau utilise pour formuler sa réponse."""
+import ctypes
+import datetime
+import os
+import subprocess
+import time
+import webbrowser
+from pathlib import Path
+
+from . import config
+
+user32 = ctypes.windll.user32 if os.name == "nt" else None
+
+# ---------- Touches média / volume ----------
+VK = {
+    "next": 0xB0, "previous": 0xB1, "stop": 0xB2, "play_pause": 0xB3,
+    "mute": 0xAD, "volume_down": 0xAE, "volume_up": 0xAF,
+}
+
+
+def _press(vk: int, times: int = 1):
+    for _ in range(times):
+        user32.keybd_event(vk, 0, 0, 0)
+        user32.keybd_event(vk, 0, 2, 0)
+        time.sleep(0.03)
+
+
+def media(action: str) -> str:
+    if action not in ("next", "previous", "stop", "play_pause"):
+        return "Action média inconnue."
+    _press(VK[action])
+    return {"next": "Piste suivante.", "previous": "Piste précédente.",
+            "stop": "Lecture arrêtée.", "play_pause": "Lecture/pause basculée."}[action]
+
+
+def volume(action: str, steps: int = 5) -> str:
+    if action == "mute":
+        _press(VK["mute"])
+        return "Son coupé/rétabli."
+    if action in ("up", "down"):
+        _press(VK["volume_" + action], max(1, min(int(steps), 50)))
+        return f"Volume {'augmenté' if action == 'up' else 'baissé'}."
+    return "Action volume inconnue."
+
+
+# ---------- Applications ----------
+_APPS: dict[str, str] = {}
+
+
+def scan_apps() -> dict:
+    """Indexe les raccourcis du menu Démarrer, du Bureau et les jeux Steam."""
+    roots = [
+        Path(os.environ.get("ProgramData", r"C:\ProgramData")) / r"Microsoft\Windows\Start Menu\Programs",
+        Path(os.environ.get("APPDATA", "")) / r"Microsoft\Windows\Start Menu\Programs",
+        Path.home() / "Desktop",
+        Path(os.environ.get("PUBLIC", r"C:\Users\Public")) / "Desktop",
+    ]
+    apps = {}
+    for root in roots:
+        if root.exists():
+            for p in root.rglob("*"):
+                if p.suffix.lower() in (".lnk", ".url") and "uninstall" not in p.stem.lower() \
+                        and "désinstaller" not in p.stem.lower():
+                    apps.setdefault(p.stem.lower(), str(p))
+    # Jeux Steam
+    for steam in (Path(r"C:\Program Files (x86)\Steam\steamapps"), Path(r"C:\Program Files\Steam\steamapps")):
+        if steam.exists():
+            for acf in steam.glob("appmanifest_*.acf"):
+                try:
+                    txt = acf.read_text(encoding="utf-8", errors="ignore")
+                    appid = acf.stem.split("_")[1]
+                    name = txt.split('"name"')[1].split('"')[1]
+                    apps.setdefault(name.lower(), f"steam://rungameid/{appid}")
+                except Exception:
+                    pass
+    _APPS.clear()
+    _APPS.update(apps)
+    return apps
+
+
+def _find_app(name: str):
+    if not _APPS:
+        scan_apps()
+    n = name.lower().strip()
+    if n in _APPS:
+        return n, _APPS[n]
+    cands = [k for k in _APPS if n in k] or [k for k in _APPS if all(w in k for w in n.split())]
+    if cands:
+        best = min(cands, key=len)
+        return best, _APPS[best]
+    return None, None
+
+
+def open_app(name: str) -> str:
+    key, target = _find_app(name)
+    if not target:
+        return f"Application « {name} » introuvable."
+    os.startfile(target)
+    return f"{key} lancé."
+
+
+def close_app(name: str) -> str:
+    exe = name.lower().replace(" ", "")
+    if not exe.endswith(".exe"):
+        exe += ".exe"
+    r = subprocess.run(["taskkill", "/IM", exe, "/F"], capture_output=True, text=True,
+                       creationflags=0x08000000)
+    return f"{name} fermé." if r.returncode == 0 else f"Impossible de fermer {name} (processus {exe} introuvable)."
+
+
+def list_apps(query: str = "") -> str:
+    if not _APPS:
+        scan_apps()
+    names = sorted(k for k in _APPS if query.lower() in k)[:40]
+    return ", ".join(names) or "Aucune application trouvée."
+
+
+# ---------- Spotify ----------
+def spotify_play(query: str) -> str:
+    """Ouvre Spotify sur une recherche (l'utilisateur ou 'next' lance ensuite)."""
+    os.startfile(f"spotify:search:{query}")
+    return f"Recherche « {query} » ouverte dans Spotify."
+
+
+# ---------- Fichiers ----------
+def _allowed(p: Path, cfg) -> bool:
+    p = p.resolve()
+    return any(str(p).lower().startswith(str(Path(f).resolve()).lower()) for f in cfg["allowed_folders"])
+
+
+def find_files(query: str, cfg) -> str:
+    q = query.lower()
+    hits = []
+    for folder in cfg["allowed_folders"]:
+        root = Path(folder)
+        if not root.exists():
+            continue
+        for p in root.rglob("*"):
+            if q in p.name.lower():
+                hits.append(str(p))
+                if len(hits) >= 15:
+                    break
+        if len(hits) >= 15:
+            break
+    return "\n".join(hits) or "Aucun fichier trouvé."
+
+
+def open_path(path: str, cfg) -> str:
+    p = Path(os.path.expandvars(os.path.expanduser(path)))
+    if not p.exists():
+        return "Ce chemin n'existe pas."
+    if not _allowed(p, cfg):
+        return "Ce dossier n'est pas dans les dossiers autorisés."
+    os.startfile(str(p))
+    return f"{p.name} ouvert."
+
+
+def open_folder(name: str) -> str:
+    known = {"bureau": "Desktop", "documents": "Documents", "téléchargements": "Downloads",
+             "telechargements": "Downloads", "musique": "Music", "images": "Pictures", "vidéos": "Videos",
+             "videos": "Videos"}
+    sub = known.get(name.lower(), name)
+    p = Path.home() / sub
+    if p.exists():
+        os.startfile(str(p))
+        return f"Dossier {name} ouvert."
+    return f"Dossier {name} introuvable."
+
+
+def organize_downloads(cfg) -> str:
+    dl = Path.home() / "Downloads"
+    groups = {"Images": {".jpg", ".jpeg", ".png", ".gif", ".webp", ".heic"},
+              "Documents": {".pdf", ".docx", ".doc", ".xlsx", ".pptx", ".txt", ".csv"},
+              "Musique": {".mp3", ".wav", ".flac", ".m4a"}, "Vidéos": {".mp4", ".mkv", ".mov", ".avi"},
+              "Archives": {".zip", ".rar", ".7z"}, "Installateurs": {".exe", ".msi"}}
+    moved = 0
+    for f in dl.iterdir():
+        if f.is_file():
+            for g, exts in groups.items():
+                if f.suffix.lower() in exts:
+                    (dl / g).mkdir(exist_ok=True)
+                    dest = dl / g / f.name
+                    if not dest.exists():
+                        f.rename(dest)
+                        moved += 1
+                    break
+    return f"{moved} fichiers rangés dans Téléchargements."
+
+
+# ---------- Système ----------
+def system(action: str) -> str:
+    if action == "lock":
+        user32.LockWorkStation()
+        return "Session verrouillée."
+    if action == "screenshot":
+        _press(0x2C)  # Impr écran -> presse-papiers / OneDrive selon réglages
+        subprocess.Popen(["explorer", "ms-screenclip:"])
+        return "Outil de capture ouvert."
+    if action == "shutdown":
+        subprocess.run(["shutdown", "/s", "/t", "30"], creationflags=0x08000000)
+        return "Arrêt dans 30 secondes. Dites « annule l'arrêt » pour annuler."
+    if action == "restart":
+        subprocess.run(["shutdown", "/r", "/t", "30"], creationflags=0x08000000)
+        return "Redémarrage dans 30 secondes."
+    if action == "cancel_shutdown":
+        subprocess.run(["shutdown", "/a"], creationflags=0x08000000)
+        return "Arrêt annulé."
+    if action == "sleep":
+        subprocess.run(["rundll32.exe", "powrprof.dll,SetSuspendState", "0,1,0"])
+        return "Mise en veille."
+    return "Action système inconnue."
+
+
+def now() -> str:
+    d = datetime.datetime.now()
+    jours = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
+    return f"Nous sommes {jours[d.weekday()]} {d:%d/%m/%Y}, il est {d:%H:%M}."
+
+
+def web_search(query: str) -> str:
+    webbrowser.open(f"https://www.google.com/search?q={query}")
+    return f"Recherche « {query} » ouverte."
+
+
+def open_website(url: str) -> str:
+    if not url.startswith("http"):
+        url = "https://" + url
+    webbrowser.open(url)
+    return f"{url} ouvert."
+
+
+def type_text(text: str) -> str:
+    """Tape du texte dans la fenêtre active via le presse-papiers."""
+    import tkinter as tk
+    r = tk.Tk(); r.withdraw(); r.clipboard_clear(); r.clipboard_append(text); r.update(); r.destroy()
+    time.sleep(0.1)
+    user32.keybd_event(0x11, 0, 0, 0); user32.keybd_event(0x56, 0, 0, 0)
+    user32.keybd_event(0x56, 0, 2, 0); user32.keybd_event(0x11, 0, 2, 0)
+    return "Texte tapé."
+
+
+_timers = []
+
+
+def set_timer(seconds: int, label: str, speak) -> str:
+    import threading
+    t = threading.Timer(int(seconds), lambda: speak(f"Minuteur terminé : {label}."))
+    t.daemon = True
+    t.start()
+    _timers.append(t)
+    m, s = divmod(int(seconds), 60)
+    return f"Minuteur de {m} min {s} s lancé."
+
+
+# Actions qui demandent une confirmation vocale
+SENSITIVE = {("system", "shutdown"), ("system", "restart"), ("organize_downloads", None)}

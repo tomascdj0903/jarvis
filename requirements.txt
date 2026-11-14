@@ -1,0 +1,9 @@
+requests
+numpy
+sounddevice
+openwakeword
+onnxruntime
+edge-tts
+pystray
+pillow
+pyinstaller
