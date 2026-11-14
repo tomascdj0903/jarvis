@@ -25,6 +25,7 @@ class Voice:
         self.speaking = threading.Event()
         self.trigger = threading.Event()  # écoute forcée (raccourci / clic sur l'orbe)
         self.last_score = 0.0
+        self.needs_verify = False
         from openwakeword.model import Model
         import openwakeword.utils
         try:
@@ -52,7 +53,7 @@ class Voice:
             data, _ = self.stream.read(CHUNK)
             ring.append(data.copy())
             if self.trigger.is_set():
-                self.trigger.clear(); self.preroll = []
+                self.trigger.clear(); self.preroll = []; self.needs_verify = False
                 return "manual"
             if self.paused or self.speaking.is_set():
                 continue
@@ -65,7 +66,10 @@ class Voice:
             # déclenche sur un pic franc OU sur deux trames moyennement sûres d'affilée
             hot = hot + 1 if score >= thr * 0.6 else 0
             if score >= thr or hot >= 2:
-                self.preroll = []  # le mot de réveil lui-même n'est pas utile à la commande
+                peak = max(score, self.last_score)
+                # réveil incertain : on garde le mot de réveil dans l'audio pour le vérifier à la transcription
+                self.needs_verify = peak < max(0.5, thr * 2)
+                self.preroll = list(ring) if self.needs_verify else []
                 return "wake"
 
     def record_command(self, max_s=9.0, silence_s=1.1) -> bytes:

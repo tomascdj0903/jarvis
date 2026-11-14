@@ -179,7 +179,26 @@ class Wizard:
         self.sens.set(round((0.75 - cfg.get("wake_threshold", 0.35)) / 0.06))
         self.sens.pack(side="right")
 
-        label("7 · VÉRIFICATION DU PC")
+        label("7 · VIE PRIVÉE")
+        self.logu = tk.BooleanVar(value=cfg.get("log_utterances", False))
+        self.lockp = tk.BooleanVar(value=cfg.get("pause_when_locked", True))
+        for var, txt in ((self.lockp, "Ne pas écouter quand la session Windows est verrouillée"),
+                         (self.logu, "Journal détaillé : enregistrer mes phrases (pour le débogage)")):
+            tk.Checkbutton(f, text=txt, variable=var, bg=BG, fg=WHITE, selectcolor=CARD, activebackground=BG,
+                           activeforeground=WHITE, font=("Segoe UI", 10), anchor="w").pack(fill="x")
+        tk.Label(f, justify="left", wraplength=500, fg=GREY, bg=BG, font=("Segoe UI", 9), anchor="w", text=(
+            "• « Hey Jarvis » est détecté sur ce PC : rien n'est envoyé tant que Jarvis ne s'est pas réveillé.\n"
+            "• Après le réveil, la phrase (audio) est envoyée à Groq pour être transcrite et comprise.\n"
+            "• « Regarde mon écran » envoie une capture à Groq, seulement quand vous le demandez.\n"
+            "• Votre clé est chiffrée par Windows (lisible seulement par votre compte sur ce PC).\n"
+            "• Le journal est limité à 3 Mo et ne contient pas vos phrases, sauf si vous cochez la case.")
+        ).pack(fill="x", pady=(4, 0))
+        prow = tk.Frame(f, bg=BG); prow.pack(fill="x", pady=(6, 0))
+        self._btn(prow, "Effacer le journal", self.clear_log, GREY).pack(side="left")
+        self._btn(prow, "Ouvrir le dossier Jarvis", lambda: __import__("os").startfile(str(config.APP_DIR)), GREY
+                  ).pack(side="left", padx=6)
+
+        label("8 · VÉRIFICATION DU PC")
         self.diag = tk.Frame(f, bg=CARD); self.diag.pack(fill="x")
         threading.Thread(target=self.run_checks, daemon=True).start()
 
@@ -252,6 +271,21 @@ class Wizard:
                 self.w.after(0, lambda: self.mic_status.config(text=f"Voix indisponible : {e}", fg=RED))
         threading.Thread(target=run, daemon=True).start()
 
+    def clear_log(self):
+        import logging
+        for h in logging.getLogger().handlers:
+            try:
+                h.flush(); h.stream.seek(0); h.stream.truncate()
+            except Exception:
+                pass
+        for f in config.APP_DIR.glob("jarvis.log*"):
+            try:
+                if f.name != "jarvis.log":
+                    f.unlink()
+            except OSError:
+                pass
+        self.mic_status.config(text="Journal effacé.", fg=GREEN)
+
     def draw_meter(self):
         c = self.meter; c.delete("all")
         wdt = c.winfo_width() or 500
@@ -307,6 +341,7 @@ class Wizard:
                         music_service=self.services[max(0, self.music.current())][0],
                         voice=self.voices[max(0, self.voice.current())][0],
                         home_city=self.city.get().strip(),
+                        log_utterances=self.logu.get(), pause_when_locked=self.lockp.get(),
                         wake_threshold=round(0.75 - self.sens.get() * 0.06, 2), _autostart=self.autostart.get())
         config.save(self.cfg)
         if self.stream:

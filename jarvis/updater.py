@@ -18,6 +18,18 @@ def _v(s: str):
     return tuple(int(x) for x in s.lstrip("vV").split(".") if x.isdigit())
 
 
+def cleanup_temp():
+    """Supprime les dossiers de mise à jour des fois précédentes (~350 Mo chacun)."""
+    import shutil
+    cur = Path(sys.executable).resolve()
+    for d in Path(tempfile.gettempdir()).glob("jarvis_upd_*"):
+        try:
+            if d not in cur.parents:  # jamais le dossier d'où l'on s'exécute
+                shutil.rmtree(d, ignore_errors=True)
+        except Exception:
+            pass
+
+
 def check():
     """Renvoie (version, url_zip, notes) si une version plus récente existe, sinon None."""
     try:

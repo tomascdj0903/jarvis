@@ -52,6 +52,11 @@ RULES = [
      lambda m: actions.resume()),
     (r"\b(c'est quoi|quelle est|quel est|c est quoi) (cette|la|ce|le) (musique|chanson|son|titre|morceau)\b|\bqu'est ce qui (joue|passe)\b",
      lambda m: actions.what_is_playing()),
+    (r"\b(son|volume)\b\D*?(?P<v>\d{1,3})\s*(%|pour ?cent)?\s+(et|puis)\b.*\bluminosite\b\D*?(?P<l>\d{1,3})",
+     lambda m: actions.set_volume(int(m.group("v"))) + " " + actions.set_brightness(int(m.group("l")))),
+    (r"\b(son|volume)\b\D*?\b(a|au|sur)\s*(?P<v>\d{1,3})\s*(%|pour ?cent)?(?!.*lumin)", lambda m: actions.set_volume(int(m.group("v")))),
+    (r"\b(luminosite|lumiere de l'ecran)\b\D*?\b(a|au|sur)\s*(?P<v>\d{1,3})\s*(%|pour ?cent)?(?!.*(son|volume))",
+     lambda m: actions.set_brightness(int(m.group("v")))),
     (r"\b(monte|augmente|plus fort)( le (son|volume))?", lambda m: actions.volume("up", 5)),
     (r"\b(baisse|diminue|moins fort)( le (son|volume))?", lambda m: actions.volume("down", 5)),
     (r"^(coupe|mute)( le)? (son|volume)$|^silence$", lambda m: actions.volume("mute")),
@@ -141,3 +146,9 @@ def route(text: str):
             if res is not None:
                 return res
     return None
+
+
+def looks_like_command(text: str) -> bool:
+    """Vrai si la phrase ressemble à une commande connue (sans rien exécuter)."""
+    t = clean(text)
+    return bool(t) and any(re.search(pat, t) for pat, _ in RULES)

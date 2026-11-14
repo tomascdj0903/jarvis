@@ -11,12 +11,14 @@ from . import actions, config
 from .brain import Brain
 from .hud import HUD
 
-logging.basicConfig(filename=config.LOG_FILE, level=logging.INFO,
-                    format="%(asctime)s %(levelname)s %(message)s", encoding="utf-8")
+from logging.handlers import RotatingFileHandler
+_h = RotatingFileHandler(config.LOG_FILE, maxBytes=1_000_000, backupCount=2, encoding="utf-8")
+_h.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+logging.basicConfig(level=logging.INFO, handlers=[_h])
 log = logging.getLogger("jarvis")
 
 STARTUP_LNK = Path(os.environ.get("APPDATA", "")) / r"Microsoft\Windows\Start Menu\Programs\Startup\Jarvis.lnk"
-YES = ("oui", "ouais", "confirme", "vas-y", "vas y", "ok", "d'accord", "affirmatif", "yes")
+from .util import is_yes, has_wake_word, strip_wake_word, _privacy, session_locked  # noqa
 
 
 # ---------- Écran de démarrage ----------
@@ -117,7 +119,7 @@ class Jarvis:
             self.hud.set(state, level)
 
     def say(self, text):
-        log.info("JARVIS: %s", text)
+        log.info("JARVIS: %s", _privacy(text, self.cfg))
         self.hud.set("speaking", 0, text)
         self.voice.speak(text)
 
@@ -125,8 +127,9 @@ class Jarvis:
         self.say(question)
         self.voice.beep()
         ans = self.voice.listen().lower()
-        log.info("CONFIRM: %s", ans)
-        return any(w in ans for w in YES)
+        ok = is_yes(ans)
+        log.info("CONFIRM: %s", "oui" if ok else "non")
+        return ok
 
     def loop(self):
         from .voice import Voice
@@ -139,8 +142,8 @@ class Jarvis:
             self.ready.set()
             return
         self.brain = Brain(self.cfg, self.say, self.confirm)
-        try:  # au démarrage : vérifie que le modèle configuré existe encore
-            model = self.brain.pick_model()
+        try:  # au démarrage : ne remplace le modèle que s'il n'existe plus
+            model = self.brain.pick_model(keep=self.cfg.get("llm_model"))
             if model != self.cfg.get("llm_model"):
                 log.info("modèle %s -> %s", self.cfg.get("llm_model"), model)
                 self.cfg["llm_model"] = model
@@ -153,14 +156,26 @@ class Jarvis:
         hk = self.cfg.get("hotkey", "ctrl+alt+j").upper()
         self.say(f"Systèmes en ligne. À votre service, {self.cfg['user_name']}.")
         self.hud.notify(f"Dites « Hey Jarvis », appuyez sur {hk} ou cliquez sur l'orbe", 10)
+        fails, announced = 0, False
         while self.running:
             try:
+                if self.cfg.get("pause_when_locked", True) and session_locked():
+                    import time as _t; _t.sleep(2); continue  # personne ne doit commander un PC verrouillé
                 how = self.voice.wait_for_wake()
-                log.info("réveil: %s (score %.2f)", how, self.voice.last_score)
+                score = self.voice.last_score
+                log.info("réveil: %s (score %.2f)", how, score)
                 self.voice.beep()
                 self.hud.set("listening", 0, "")
                 text = self.voice.listen()
-                log.info("USER: %s", text)
+                fails, announced = 0, False
+                if how == "wake" and self.voice.needs_verify:
+                    from .router import looks_like_command
+                    if not has_wake_word(text) and not looks_like_command(text):
+                        log.info("réveil incertain rejeté (pas de « Jarvis » entendu)")
+                        self.hud.set("idle")
+                        continue
+                text = strip_wake_word(text)
+                log.info("USER: %s", _privacy(text, self.cfg))
                 if len(text) < 2:
                     self.hud.set("idle")
                     self.hud.notify("Je n'ai rien entendu.", 3)
@@ -174,16 +189,25 @@ class Jarvis:
                     log.info("routeur local")
                 self.say(reply)
             except Exception as e:
+                import time as _t
                 log.exception("loop")
                 msg = str(e)
+                fails += 1
+                audio = any(k in msg.lower() for k in ("portaudio", "device", "stream", "host error", "mme"))
                 if "401" in msg:
                     self.say("Ma clé API semble invalide. Vérifiez-la dans les réglages.")
                 elif "429" in msg:
                     self.say("Quota gratuit atteint pour le moment. Réessayez dans une minute.")
-                else:
+                elif audio:
+                    if not announced:  # une seule annonce, puis réessais silencieux
+                        self.hud.notify("Micro indisponible — je réessaie automatiquement", 15)
+                        announced = True
+                elif fails <= 2:
                     self.say("Désolé, un problème est survenu.")
                 self.hud.set("idle")
-                self.hud.notify(f"Erreur : {msg[:80]}", 8)
+                if not audio:
+                    self.hud.notify(f"Erreur : {msg[:80]}", 8)
+                _t.sleep(min(60, 2 ** min(fails, 6)))  # 2, 4, 8… 60 s : jamais de boucle folle
 
     # ----- icône système -----
     def tray(self):
@@ -293,6 +317,11 @@ class Jarvis:
         self.tray()
 
     def run(self):
+        try:
+            from .updater import cleanup_temp
+            threading.Thread(target=cleanup_temp, daemon=True).start()
+        except Exception:
+            pass
         if self.update_before_start():
             self.root.destroy()
             os._exit(0)
@@ -333,7 +362,7 @@ def selftest() -> int:
         return f"score silence={max(m.predict(np.zeros(1280, dtype=np.int16)).values()):.3f}"
     step("openwakeword hey_jarvis", oww)
     step("contrôle média Windows (winrt)", lambda: f"{len(__import__('jarvis.media', fromlist=['sessions']).sessions())} session(s)")
-    step("modules", lambda: [__import__(f"jarvis.{m}") for m in ("actions", "brain", "router", "settings", "updater", "hud", "voice")] and "ok")
+    step("modules", lambda: [__import__(f"jarvis.{m}") for m in ("actions", "brain", "router", "settings", "updater", "hud", "voice", "util", "media", "vision", "weather")] and "ok")
     step("routeur", lambda: __import__("jarvis.router", fromlist=["route"]).route("raconte une blague") is None or 1/0)
     try:  # test réseau réel (informatif, ne bloque pas la publication)
         from .weather import weather

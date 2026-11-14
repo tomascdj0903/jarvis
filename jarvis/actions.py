@@ -108,6 +108,25 @@ def volume(action: str, steps: int = 5) -> str:
     return "Action volume inconnue."
 
 
+def set_volume(percent: int) -> str:
+    """Volume exact : 50 crans vers le bas (0 %), puis remontée (1 cran = 2 %)."""
+    p = max(0, min(100, int(percent)))
+    _press(VK["volume_down"], 50)
+    _press(VK["volume_up"], round(p / 2))
+    return f"Volume réglé à {p} %."
+
+
+def set_brightness(percent: int) -> str:
+    """Luminosité de l'écran intégré (portable) via WMI. Les écrans externes ne sont pas pilotables ainsi."""
+    p = max(0, min(100, int(percent)))
+    r = subprocess.run(["powershell", "-NoProfile", "-Command",
+                        f"(Get-WmiObject -Namespace root/WMI -Class WmiMonitorBrightnessMethods)"
+                        f".WmiSetBrightness(1,{p})"], capture_output=True, text=True, creationflags=0x08000000)
+    if r.returncode != 0 or "Exception" in (r.stderr or ""):
+        return "Impossible de régler la luminosité de cet écran."
+    return f"Luminosité réglée à {p} %."
+
+
 # ---------- Applications ----------
 _APPS: dict[str, str] = {}
 
@@ -197,18 +216,39 @@ def open_app(name: str) -> str:
     return f"{key} lancé."
 
 
+PROTECTED = {"explorer.exe", "svchost.exe", "csrss.exe", "winlogon.exe", "lsass.exe", "services.exe", "dwm.exe",
+             "system", "registry", "smss.exe", "wininit.exe", "jarvis.exe", "python.exe", "pythonw.exe",
+             "searchhost.exe", "startmenuexperiencehost.exe", "shellexperiencehost.exe", "ctfmon.exe",
+             "runtimebroker.exe", "sihost.exe", "taskhostw.exe", "fontdrvhost.exe", "conhost.exe", "msmpeng.exe"}
+
+
+def _procs():
+    r = subprocess.run(["tasklist", "/FO", "CSV", "/NH"], capture_output=True, text=True, creationflags=0x08000000)
+    return {line.split('","')[0].strip('"').lower() for line in r.stdout.splitlines() if line}
+
+
 def close_app(name: str) -> str:
-    """Ferme un programme en cherchant son processus par nom approché."""
-    want = name.lower().replace(" ", "").removesuffix(".exe")
-    r = subprocess.run(["tasklist", "/FO", "CSV", "/NH"], capture_output=True, text=True,
-                       creationflags=0x08000000)
-    procs = {line.split('","')[0].strip('"') for line in r.stdout.splitlines() if line}
-    hits = [p for p in procs if want in p.lower().replace(" ", "")]
-    if not hits:
-        return f"Aucun programme « {name} » en cours."
-    for p in hits:
-        subprocess.run(["taskkill", "/IM", p, "/F"], capture_output=True, creationflags=0x08000000)
-    return f"{name} fermé."
+    """Ferme UN programme : nom d'exe exact (ou exact sans espaces), jamais un processus système.
+    Fermeture douce d'abord (comme la croix), forcée seulement si le programme ne répond pas."""
+    want = name.lower().strip().removesuffix(".exe")
+    if len(want) < 3:
+        return "Nom de programme trop court, précisez lequel fermer."
+    procs = _procs()
+    cands = [p for p in procs if p.removesuffix(".exe") in (want, want.replace(" ", ""))]
+    if not cands:  # nom de fenêtre (ex. « word » -> winword.exe)
+        wins = [w for w in _windows() if want in w[2].lower() and w[1]]
+        cands = sorted({w[1] for w in wins})
+    cands = [c for c in cands if c not in PROTECTED]
+    if not cands:
+        return f"Aucun programme « {name} » ouvert (ou programme protégé)."
+    if len(cands) > 1:
+        return f"Plusieurs programmes correspondent ({', '.join(cands[:4])}) : lequel dois-je fermer ?"
+    exe = cands[0]
+    subprocess.run(["taskkill", "/IM", exe], capture_output=True, creationflags=0x08000000)  # douce
+    time.sleep(2.5)
+    if exe in _procs():
+        subprocess.run(["taskkill", "/IM", exe, "/F"], capture_output=True, creationflags=0x08000000)
+    return f"{exe.removesuffix('.exe')} fermé."
 
 
 def list_apps(query: str = "") -> str:
@@ -219,6 +259,7 @@ def list_apps(query: str = "") -> str:
 
 
 # ---------- Musique (sans API ni compte) ----------
+YT_COOKIES = {"SOCS": "CAI", "CONSENT": "YES+"}  # évite la page de consentement européenne de YouTube
 UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130 Safari/537.36",
       "Accept-Language": "fr-FR,fr;q=0.9"}
 
@@ -233,7 +274,7 @@ def correct_query(query: str) -> str:
     """Corrige l'orthographe comme la barre de recherche YouTube (« nahar pnl » -> « naha pnl »)."""
     import requests
     try:
-        r = requests.get("https://suggestqueries.google.com/complete/search", timeout=5, headers=UA,
+        r = requests.get("https://suggestqueries.google.com/complete/search", timeout=5, headers=UA, cookies=YT_COOKIES,
                          params={"client": "firefox", "ds": "yt", "hl": "fr", "q": query}).json()
         sug = r[1] if len(r) > 1 else []
         n = len(query.split())
@@ -251,7 +292,7 @@ def _youtube_id(query: str):
     import json, re, urllib.parse
     import requests
     html = requests.get("https://www.youtube.com/results?search_query=" + urllib.parse.quote(query),
-                        headers=UA, timeout=8).text
+                        headers=UA, cookies=YT_COOKIES, timeout=8).text
     m = re.search(r"var ytInitialData = (\{.*?\});</script>", html)
     cands = []
     if m:
@@ -299,8 +340,17 @@ def play_music(query: str, service: str = "youtube") -> str:
     service = (service or "youtube").lower()
     try:
         if service in ("youtube", "youtube_music"):
-            query = correct_query(query)
-            vid = _youtube_id(query + (" audio" if service == "youtube_music" else ""))
+            import re as _re
+            base = _re.sub(r"\b(de|du|des|la|le|les|d')\b", " ", query)
+            base = " ".join(base.split()) or query
+            fixed = correct_query(base)
+            suffix = " audio" if service == "youtube_music" else ""
+            vid = None
+            for q in dict.fromkeys((fixed, base, query)):  # corrigé, puis brut si rien trouvé
+                vid = _youtube_id(q + suffix)
+                if vid:
+                    query = q
+                    break
             if not vid:
                 return f"Rien trouvé pour « {query} »."
             host = "music.youtube.com" if service == "youtube_music" else "www.youtube.com"
@@ -319,8 +369,20 @@ def play_music(query: str, service: str = "youtube") -> str:
             return f"Je lance « {query} » sur Deezer."
         # Spotify : recherche dans l'appli, puis Entrée sur le meilleur résultat
         os.startfile(f"spotify:search:{query}")
-        time.sleep(3.0)
+        sp = None
+        for _ in range(10):  # attend la fenêtre Spotify (5 s max)
+            time.sleep(0.5)
+            sp = next((w for w in _windows() if w[1] == "spotify.exe"), None)
+            if sp:
+                break
+        if not sp:
+            return f"Recherche « {query} » ouverte dans Spotify."
+        _force_front(sp[0]); time.sleep(1.5)
+        if user32.GetForegroundWindow() != sp[0]:
+            return f"Recherche « {query} » ouverte dans Spotify."  # jamais de frappe dans une autre fenêtre
         for vk in (0x09, 0x0D):  # Tab puis Entrée (lecture du meilleur résultat)
+            if user32.GetForegroundWindow() != sp[0]:
+                break
             user32.keybd_event(vk, 0, 0, 0); user32.keybd_event(vk, 0, 2, 0); time.sleep(0.4)
         _autoplay(after=1, keywords=("spotify",))
         return f"Je lance « {query} » sur Spotify."
@@ -432,7 +494,13 @@ def spotify_play(query: str) -> str:  # compatibilité
 # ---------- Fichiers ----------
 def _allowed(p: Path, cfg) -> bool:
     p = p.resolve()
-    return any(str(p).lower().startswith(str(Path(f).resolve()).lower()) for f in cfg["allowed_folders"])
+    for f in cfg["allowed_folders"]:
+        try:
+            if p.is_relative_to(Path(f).resolve()):
+                return True
+        except (OSError, ValueError):
+            pass
+    return False
 
 
 def _key(name: str) -> str:
@@ -586,4 +654,7 @@ def set_timer(seconds: int, label: str, speak) -> str:
 
 
 # Actions qui demandent une confirmation vocale
-SENSITIVE = {("system", "shutdown"), ("system", "restart"), ("organize_downloads", None)}
+SENSITIVE = {("system", "shutdown"), ("system", "restart"), ("organize_downloads", None),
+             ("close_app", None), ("type_text", None), ("open_website", None), ("open_path", None)}
+# outils qui lisent du contenu extérieur (web, écran) : après eux, plus d'action automatique dans le même tour
+READERS = {"ask_web", "look_at_screen"}
