@@ -56,6 +56,7 @@ DEFAULTS = {
     "openrouter_api_key": "",
     "conversation_mode": True,
     "duck_music": True,
+    "morning_briefing": True,
     "show_hud": True,
     "log_utterances": False,
     "pause_when_locked": True,

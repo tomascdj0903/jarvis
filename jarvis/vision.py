@@ -22,9 +22,11 @@ def _model(key):
     return PREFERRED[0]
 
 
-def capture_jpeg(max_w=1280) -> bytes:
+def capture_jpeg(max_w=1280, size_out=None) -> bytes:
     from PIL import ImageGrab
     img = ImageGrab.grab(all_screens=False).convert("RGB")
+    if size_out is not None:
+        size_out.extend(img.size)
     if img.width > max_w:
         img = img.resize((max_w, int(img.height * max_w / img.width)))
     buf = io.BytesIO(); img.save(buf, "JPEG", quality=70)
@@ -43,3 +45,47 @@ def look(question: str, cfg) -> str:
     if not r.ok:
         return f"Je n'arrive pas à analyser l'écran ({r.status_code})."
     return r.json()["choices"][0]["message"]["content"].strip()
+
+
+def locate(target: str, cfg):
+    """Demande au modèle de vision où se trouve « target » à l'écran. Renvoie (x, y) en pixels écran ou None."""
+    import json
+    import re
+    key = cfg["groq_api_key"].strip()
+    size = []
+    b64 = base64.b64encode(capture_jpeg(size_out=size)).decode()
+    r = requests.post("https://api.groq.com/openai/v1/chat/completions", timeout=40,
+                      headers={"Authorization": f"Bearer {key}"},
+                      json={"model": _model(key), "max_tokens": 80, "temperature": 0, "messages": [{"role": "user", "content": [
+                          {"type": "text", "text": "Trouve l'élément cliquable suivant sur cette capture d'écran : « "
+                           + target + " ». Réponds UNIQUEMENT en JSON : {\"found\": true/false, \"x\": 0-1000, "
+                           "\"y\": 0-1000} où x et y sont le centre de l'élément en millièmes de la largeur/hauteur."},
+                          {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}]}]})
+    if not r.ok:
+        return None
+    m = re.search(r"\{.*\}", r.json()["choices"][0]["message"]["content"], re.S)
+    if not m:
+        return None
+    d = json.loads(m.group(0))
+    if not d.get("found"):
+        return None
+    import ctypes
+    u = ctypes.windll.user32
+    sw, sh = u.GetSystemMetrics(0), u.GetSystemMetrics(1)  # coordonnées écran logiques
+    return int(float(d["x"]) / 1000 * sw), int(float(d["y"]) / 1000 * sh)
+
+
+def click_on(target: str, cfg, confirm) -> str:
+    """Clique sur un élément décrit à voix haute (expérimental, toujours avec confirmation)."""
+    import ctypes
+    import time
+    pos = locate(target, cfg)
+    if not pos:
+        return f"Je ne trouve pas « {target} » à l'écran."
+    u = ctypes.windll.user32
+    u.SetCursorPos(*pos)  # on montre d'abord où l'on va cliquer
+    if not confirm(f"Je clique ici, sur {target} ?"):
+        return "Clic annulé."
+    u.SetCursorPos(*pos); time.sleep(0.05)
+    u.mouse_event(0x0002, 0, 0, 0, 0); u.mouse_event(0x0004, 0, 0, 0, 0)
+    return f"Clic sur {target}."

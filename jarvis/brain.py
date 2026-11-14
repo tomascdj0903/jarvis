@@ -5,7 +5,7 @@ import json
 
 import requests
 
-from . import actions, vision, weather  # imports statiques : embarqués dans le .exe
+from . import actions, assistant, vision, weather  # imports statiques : embarqués dans le .exe
 
 API_URL = "https://api.groq.com/openai/v1/chat/completions"
 MODELS_URL = "https://api.groq.com/openai/v1/models"
@@ -70,11 +70,19 @@ TOOLS = [
           "et renvoie la réponse à dire. N'ouvre rien à l'écran.", {"question": S}, ["question"]),
     _tool("look_at_screen", "Regarde l'écran de l'utilisateur et répond à une question dessus (qu'est-ce qui est affiché, "
           "lis ce texte, résume cette page, où est tel bouton, quelle erreur…).", {"question": S}, ["question"]),
+    _tool("click_on", "Clique sur un bouton ou un élément visible à l'écran décrit par son nom (« le bouton Envoyer », "
+          "« la croix », « Accepter »). Jarvis montre la position et demande confirmation.", {"target": S}, ["target"]),
     _tool("web_search", "Ouvre une page Google dans le navigateur. UNIQUEMENT si l'utilisateur demande explicitement "
           "d'ouvrir ou d'afficher une recherche.", {"query": S}, ["query"]),
     _tool("open_website", "Ouvre un site web.", {"url": S}, ["url"]),
     _tool("type_text", "Tape du texte dans la fenêtre active.", {"text": S}, ["text"]),
-    _tool("set_timer", "Lance un minuteur.", {"seconds": {"type": "integer"}, "label": S}, ["seconds"]),
+    _tool("add_reminder", "Crée un rappel ou un minuteur (gardé même si le PC redémarre). when = expression française "
+          "comme « dans 10 minutes », « à 18h30 », « demain à 9h ».", {"text": S, "when": S}, ["text", "when"]),
+    _tool("list_reminders", "Liste les rappels à venir."),
+    _tool("add_note", "Enregistre une note dans le fichier Notes Jarvis.", {"text": S}, ["text"]),
+    _tool("read_notes", "Lit les dernières notes."),
+    _tool("briefing", "Point du jour : date, météo, rappels du jour, batterie."),
+    _tool("battery", "Niveau de batterie et autonomie."),
 ]
 
 
@@ -206,12 +214,19 @@ class Brain:
             "organize_downloads": lambda: a.organize_downloads(cfg),
             "system": lambda: a.system(args["action"]),
             "web_search": lambda: a.web_search(args["query"]),
+            "click_on": lambda: vision.click_on(args["target"], cfg, self.confirm),
             "look_at_screen": lambda: vision.look(args["question"], cfg),
             "get_weather": lambda: weather.weather(args.get("city", ""), args.get("day", "aujourd'hui")),
             "ask_web": lambda: weather.ask_web(args["question"], cfg),
             "open_website": lambda: a.open_website(args["url"]),
             "type_text": lambda: a.type_text(args["text"]),
-            "set_timer": lambda: a.set_timer(args["seconds"], args.get("label", "minuteur"), self.speak),
+            "add_reminder": lambda: (lambda w: assistant.add_reminder(args["text"], w) if w else
+                                     "Je n'ai pas compris quand.")(assistant.parse_when(args.get("when", ""))),
+            "list_reminders": lambda: assistant.list_reminders(),
+            "add_note": lambda: assistant.add_note(args["text"]),
+            "read_notes": lambda: assistant.read_notes(),
+            "briefing": lambda: assistant.briefing(cfg.get("user_name", "")),
+            "battery": lambda: assistant.battery(),
         }
         try:
             return table[name]() if name in table else "Outil inconnu."

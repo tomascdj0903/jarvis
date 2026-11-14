@@ -41,7 +41,51 @@ def clean(text: str) -> str:
     t = re.sub(r"^(\w+) moi ", r"\1 ", t)  # « lance-moi » -> « lance »
     return re.sub(r"\s+", " ", t).strip()
 
+def _remind(t):
+    from . import assistant
+    when = assistant.parse_when(t)
+    if not when:
+        return None
+    m = re.search(r"\b(?:de |d'|que |qu'|pour )(.+)$", re.sub(r"^rappelle(?: moi)?\s*", "", t))
+    what = m.group(1) if m else "votre rappel"
+    what = re.sub(r"\s*(dans \d+.*|dans une? demi.*|(?:demain |apres-demain |lundi |mardi |mercredi |jeudi |vendredi |samedi |dimanche )?(?:a|vers) \d{1,2}\s*(?:h|heures?).*)$", "", what).strip() or "votre rappel"
+    return assistant.add_reminder(what, when)
+
+
+def _click(target):
+    import threading
+    from . import vision
+    st = {}
+    # confirmation vocale fournie par l'appli (voir app.py) ; sans elle, pas de clic
+    conf = getattr(route, "confirm", None)
+    if conf is None:
+        return None
+    return vision.click_on(target, config.load(), conf)
+
+
+def _timer(t):
+    from . import assistant
+    when = assistant.parse_when("dans " + re.sub(r"^.*?(de |d')", "", t, count=1))
+    if not when:
+        return None
+    return assistant.add_reminder("minuteur terminé", when).replace("je vous le rappelle", "minuteur lancé, je vous préviens")
+
+
 RULES = [
+    (r"^(clique|clic|appuie) (sur )?(?P<c>.+)$", lambda m: _click(m.group("c"))),
+    (r"^rappelle(?: moi)?\b", lambda m: _remind(m.string)),
+    (r"^(mets |lance |demarre )?(un )?minuteur (de |d')?.*\d", lambda m: _timer(m.string)),
+    (r"^(quels sont |liste |dis moi |lis )?(mes|les) rappels$|^j'ai des rappels$", lambda m: __import__("jarvis.assistant", fromlist=["x"]).list_reminders()),
+    (r"^(supprime|efface|annule) (tous )?(mes|les) rappels$", lambda m: __import__("jarvis.assistant", fromlist=["x"]).clear_reminders()),
+    (r"^(prends |prend |ajoute )?(une )?note (que |: )?(?P<n>.+)$|^note (que )?(?P<n2>.+)$",
+     lambda m: __import__("jarvis.assistant", fromlist=["x"]).add_note(m.group("n") or m.group("n2"))),
+    (r"^(lis|relis|dis moi) mes (dernieres )?notes$", lambda m: __import__("jarvis.assistant", fromlist=["x"]).read_notes()),
+    (r"^(briefing|mon briefing|fais moi (le|mon) (point|briefing)|quoi de neuf aujourd'hui)$",
+     lambda m: __import__("jarvis.assistant", fromlist=["x"]).briefing(config.load().get("user_name", ""))),
+    (r"\b(batterie|autonomie)\b", lambda m: __import__("jarvis.assistant", fromlist=["x"]).battery()),
+    (r"^(coupe|desactive|eteins|deconnecte)( le)? wifi$", lambda m: __import__("jarvis.assistant", fromlist=["x"]).wifi(False)),
+    (r"^(active|allume|ouvre|reconnecte)( le| les)? (wifi|bluetooth|mode avion|economie d'energie|parametres du son|ne pas deranger)$",
+     lambda m: __import__("jarvis.assistant", fromlist=["x"]).open_settings_page(m.string)),
     (r"\b(musique|morceau|chanson|son|titre|piste) suivant|\bchange (de|la) (musique|chanson|son)|\bsuivant(e)?$|\bnext\b",
      lambda m: actions.media("next")),
     (r"\b(musique|morceau|chanson|piste) precedent|\bprecedent(e)?$|\bremets? la (musique|chanson) d'avant",
@@ -132,7 +176,13 @@ def _open(name):
     return None if "introuvable" in res else res  # sinon on laisse l'IA chercher mieux
 
 
+DICT = re.compile(r"^\W*(?:(?:hey|hé|he|ok|dis|et)\W+)?(?:jarvis\W+)?(?:écris|écrit|ecris|tape|dicte)(?:[- ]moi)?\s*[:,]?\s+(.+)$", re.I)
+
+
 def route(text: str):
+    d = DICT.match(text.strip())
+    if d:  # dictée : le texte est tapé tel que dit (accents, majuscules, ponctuation)
+        return actions.type_text(d.group(1).strip())
     t = clean(text)
     try:
         from . import macros

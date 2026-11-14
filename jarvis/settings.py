@@ -189,10 +189,12 @@ class Wizard:
         self.orb = tk.BooleanVar(value=cfg.get("show_idle_orb", True))
         self.conv = tk.BooleanVar(value=cfg.get("conversation_mode", True))
         self.duck = tk.BooleanVar(value=cfg.get("duck_music", True))
+        self.brief = tk.BooleanVar(value=cfg.get("morning_briefing", True))
         for var, txt in ((self.autostart, "Lancer Jarvis au démarrage de Windows (en arrière-plan)"),
                          (self.orb, "Afficher l'orbe de veille en bas à droite"),
                          (self.conv, "Mode conversation : après une réponse, écouter la suite sans « Hey Jarvis »"),
-                         (self.duck, "Mettre la musique en pause pendant que Jarvis m'écoute")):
+                         (self.duck, "Mettre la musique en pause pendant que Jarvis m'écoute"),
+                         (self.brief, "Briefing du matin (météo, rappels) au premier allumage entre 6 h et 11 h")):
             tk.Checkbutton(f, text=txt, variable=var, bg=BG, fg=WHITE, selectcolor=CARD, activebackground=BG,
                            activeforeground=WHITE, font=("Segoe UI", 10), anchor="w").pack(fill="x")
         srow = tk.Frame(f, bg=BG); srow.pack(fill="x", pady=(4, 0))
@@ -366,6 +368,7 @@ class Wizard:
                         home_city=self.city.get().strip(),
                         log_utterances=self.logu.get(), pause_when_locked=self.lockp.get(),
                         conversation_mode=self.conv.get(), duck_music=self.duck.get(),
+                        morning_briefing=self.brief.get(),
                         language=self.langs[max(0, self.lang.current())][0],
                         **{k: e.get().strip() for k, e in self.extra.items()},
                         wake_threshold=round(0.75 - self.sens.get() * 0.06, 2), _autostart=self.autostart.get())

@@ -204,6 +204,28 @@ def test_phase2():
     assert M.match("mode jeu") and M.match("lance le mode jeu") and not M.match("mode cours")
 
 
+def test_phase3():
+    import datetime as dt
+    import jarvis.assistant as A
+    now = dt.datetime(2026, 11, 14, 22, 0)  # samedi
+    assert A.parse_when("dans 10 minutes", now) == now + dt.timedelta(minutes=10)
+    assert A.parse_when("dans deux heures", now) == now + dt.timedelta(hours=2)
+    assert A.parse_when("demain à 9h", now) == dt.datetime(2026, 11, 15, 9, 0)
+    assert A.parse_when("à 18h30", now) == dt.datetime(2026, 11, 15, 18, 30)  # déjà passé -> demain
+    assert A.parse_when("lundi à 14h", now) == dt.datetime(2026, 11, 16, 14, 0)
+    assert A.parse_when("bonjour", now) is None
+    got = []
+    A.add_reminder = lambda what, when: got.append(what) or "OK"
+    for phrase, want in {"rappelle-moi dans 10 minutes de sortir le linge": "sortir le linge",
+                         "rappelle moi demain à 9h d'appeler maman": "appeler maman",
+                         "rappelle-moi de payer le loyer dans 2 heures": "payer le loyer",
+                         "mets un minuteur de 5 minutes": "minuteur terminé"}.items():
+        got.clear(); assert route(phrase), phrase; assert got == [want], (phrase, got)
+    import jarvis.router as R
+    fake.type_text = lambda t: f"TYPE:{t}"
+    assert route("Écris Bonjour à tous, j'arrive.") == "TYPE:Bonjour à tous, j'arrive."
+
+
 if __name__ == "__main__":
     pass
 
@@ -315,6 +337,28 @@ def test_phase2():
     assert M.match("mode jeu") and M.match("lance le mode jeu") and not M.match("mode cours")
 
 
+def test_phase3():
+    import datetime as dt
+    import jarvis.assistant as A
+    now = dt.datetime(2026, 11, 14, 22, 0)  # samedi
+    assert A.parse_when("dans 10 minutes", now) == now + dt.timedelta(minutes=10)
+    assert A.parse_when("dans deux heures", now) == now + dt.timedelta(hours=2)
+    assert A.parse_when("demain à 9h", now) == dt.datetime(2026, 11, 15, 9, 0)
+    assert A.parse_when("à 18h30", now) == dt.datetime(2026, 11, 15, 18, 30)  # déjà passé -> demain
+    assert A.parse_when("lundi à 14h", now) == dt.datetime(2026, 11, 16, 14, 0)
+    assert A.parse_when("bonjour", now) is None
+    got = []
+    A.add_reminder = lambda what, when: got.append(what) or "OK"
+    for phrase, want in {"rappelle-moi dans 10 minutes de sortir le linge": "sortir le linge",
+                         "rappelle moi demain à 9h d'appeler maman": "appeler maman",
+                         "rappelle-moi de payer le loyer dans 2 heures": "payer le loyer",
+                         "mets un minuteur de 5 minutes": "minuteur terminé"}.items():
+        got.clear(); assert route(phrase), phrase; assert got == [want], (phrase, got)
+    import jarvis.router as R
+    fake.type_text = lambda t: f"TYPE:{t}"
+    assert route("Écris Bonjour à tous, j'arrive.") == "TYPE:Bonjour à tous, j'arrive."
+
+
 if __name__ == "__main__":
-    test_router(); test_weather_routing(); test_versions(); test_brain_tool_loop(); test_open_app_real(); test_search_and_correct(); test_phase1(); test_injection_guard(); test_phase2()
+    test_router(); test_weather_routing(); test_versions(); test_brain_tool_loop(); test_open_app_real(); test_search_and_correct(); test_phase1(); test_injection_guard(); test_phase2(); test_phase3()
     print(f"TOUS LES TESTS OK ({len(CASES)} phrases)")

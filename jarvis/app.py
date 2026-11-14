@@ -147,6 +147,8 @@ class Jarvis:
             self.ready.set()
             return
         self.brain = Brain(self.cfg, self.say, self.confirm)
+        from . import router as _r
+        _r.route.confirm = self.confirm  # « clique sur… » demande toujours confirmation
         try:  # au démarrage : ne remplace le modèle que s'il n'existe plus
             model = self.brain.pick_model(keep=self.cfg.get("llm_model"))
             if model != self.cfg.get("llm_model"):
@@ -156,16 +158,23 @@ class Jarvis:
         except Exception as e:
             log.warning("pick_model: %s", e)
         threading.Thread(target=actions.scan_apps, daemon=True).start()
+        from . import assistant
+        assistant.start_scheduler(self.say, self.hud.notify)
         self.ready.set()
         threading.Thread(target=self.hotkey_thread, daemon=True).start()
         hk = self.cfg.get("hotkey", "ctrl+alt+j").upper()
         self.say(f"Systèmes en ligne. À votre service, {self.cfg['user_name']}.")
         self.hud.notify(f"Dites « Hey Jarvis », appuyez sur {hk} ou cliquez sur l'orbe", 10)
         fails, announced, follow_up = 0, False, False
+        self._maybe_briefing()
         while self.running:
             try:
                 if self.cfg.get("pause_when_locked", True) and session_locked():
-                    import time as _t; _t.sleep(2); continue  # personne ne doit commander un PC verrouillé
+                    import time as _t
+                    while self.running and session_locked():
+                        _t.sleep(2)  # personne ne doit commander un PC verrouillé
+                    self._maybe_briefing()  # au déverrouillage du matin
+                    continue
                 if follow_up:  # mode conversation : on écoute la suite sans « Hey Jarvis »
                     how = "suite"
                     self.voice.preroll = []; self.voice.needs_verify = False
@@ -246,6 +255,22 @@ class Jarvis:
             return
         updater.uninstall()
         self.running = False; self.root.destroy(); os._exit(0)
+
+    def _maybe_briefing(self):
+        """Briefing automatique, une fois par jour, au premier démarrage/déverrouillage entre 6 h et 11 h."""
+        import datetime as _d
+        now = _d.datetime.now()
+        if not self.cfg.get("morning_briefing", True) or not 6 <= now.hour < 11:
+            return
+        if self.cfg.get("_last_briefing") == now.date().isoformat():
+            return
+        self.cfg["_last_briefing"] = now.date().isoformat()
+        config.save(self.cfg)
+        from . import assistant
+        try:
+            self.say(assistant.briefing(self.cfg.get("user_name", "")))
+        except Exception:
+            log.exception("briefing")
 
     # ----- musique baissée pendant l'écoute -----
     def _duck(self) -> bool:
@@ -427,7 +452,7 @@ def selftest() -> int:
     step("chiffrement de la clé (DPAPI)", lambda: config._unprotect(config._protect("test")) == "test" or 1/0)
     step("dossiers Windows réels", lambda: config.known_folder("Documents"))
     step("contrôle média Windows (winrt)", lambda: f"{len(__import__('jarvis.media', fromlist=['sessions']).sessions())} session(s)")
-    step("modules", lambda: [__import__(f"jarvis.{m}") for m in ("actions", "brain", "router", "settings", "updater", "hud", "voice", "util", "media", "vision", "weather", "macros")] and "ok")
+    step("modules", lambda: [__import__(f"jarvis.{m}") for m in ("actions", "brain", "router", "settings", "updater", "hud", "voice", "util", "media", "vision", "weather", "macros", "assistant")] and "ok")
     step("routeur", lambda: __import__("jarvis.router", fromlist=["route"]).route("raconte une blague") is None or 1/0)
     offline = "--offline" in sys.argv
     try:  # test réseau réel (informatif, ne bloque pas la publication)
