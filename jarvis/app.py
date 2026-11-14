@@ -311,7 +311,37 @@ def single_instance() -> bool:
     return ctypes.windll.kernel32.GetLastError() != 183  # ERROR_ALREADY_EXISTS
 
 
+def selftest() -> int:
+    """Jarvis.exe --selftest : vérifie que tout est bien embarqué (utilisé par GitHub à chaque version)."""
+    out, ok = [], True
+    def step(name, fn):
+        nonlocal ok
+        try:
+            r = fn(); out.append(f"OK   {name} {r or ''}")
+        except Exception as e:
+            ok = False; out.append(f"FAIL {name}: {e!r}")
+    from . import __version__
+    step("version", lambda: __version__)
+    step("assets", lambda: all(config.resource(f"assets/{f}").exists() for f in ("jarvis.ico", "logo.png", "tray.png")) or 1/0)
+    step("numpy+sounddevice", lambda: __import__("sounddevice").__version__)
+    step("edge_tts", lambda: __import__("edge_tts").__name__)
+    step("pystray", lambda: __import__("pystray").__name__)
+    def oww():
+        from openwakeword.model import Model
+        m = Model(wakeword_models=["hey_jarvis"], inference_framework="onnx")
+        import numpy as np
+        return f"score silence={max(m.predict(np.zeros(1280, dtype=np.int16)).values()):.3f}"
+    step("openwakeword hey_jarvis", oww)
+    step("modules", lambda: [__import__(f"jarvis.{m}") for m in ("actions", "brain", "router", "settings", "updater", "hud", "voice")] and "ok")
+    step("routeur", lambda: __import__("jarvis.router", fromlist=["route"]).route("raconte une blague") is None or 1/0)
+    report = Path(sys.executable).parent / "selftest.txt"
+    report.write_text("\n".join(out) + f"\nRESULT {'OK' if ok else 'FAIL'}\n", encoding="utf-8")
+    return 0 if ok else 1
+
+
 def main():
+    if len(sys.argv) >= 2 and sys.argv[1] == "--selftest":
+        sys.exit(selftest())
     if len(sys.argv) >= 5 and sys.argv[1] == "--apply-update":
         from .updater import apply_update
         apply_update(*sys.argv[2:5])

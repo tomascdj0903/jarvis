@@ -66,7 +66,7 @@ class Wizard:
             w.iconbitmap(str(config.resource("assets/jarvis.ico")))
         except Exception:
             pass
-        W, H = 560, 800
+        W, H = 580, 900
         w.geometry(f"{W}x{H}+{(w.winfo_screenwidth()-W)//2}+{(w.winfo_screenheight()-H)//2}")
         w.attributes("-topmost", True)
         style = ttk.Style(w)
@@ -129,7 +129,18 @@ class Wizard:
                                  if v == cfg.get("music_service", "youtube")), 0))
         self.music.pack(fill="x", ipady=4)
 
-        label("5 · OPTIONS")
+        label("5 · VOIX DE JARVIS")
+        self.voices = [("fr-FR-HenriNeural", "Henri (homme, défaut)"), ("fr-FR-RemyMultilingualNeural", "Rémy (homme)"),
+                       ("fr-FR-DeniseNeural", "Denise (femme)"), ("fr-FR-VivienneMultilingualNeural", "Vivienne (femme)"),
+                       ("en-GB-RyanNeural", "Ryan (anglais britannique, façon film)")]
+        vrow = tk.Frame(f, bg=BG); vrow.pack(fill="x")
+        self.voice = ttk.Combobox(vrow, values=[n for _, n in self.voices], state="readonly",
+                                  style="J.TCombobox", font=("Segoe UI", 10))
+        self.voice.current(next((k for k, (v, _) in enumerate(self.voices) if v == cfg.get("voice")), 0))
+        self.voice.pack(side="left", fill="x", expand=True, ipady=4)
+        self._btn(vrow, "Écouter", self.test_voice).pack(side="left", padx=(6, 0))
+
+        label("6 · OPTIONS")
         self.autostart = tk.BooleanVar(value=cfg.get("_autostart", True))
         self.orb = tk.BooleanVar(value=cfg.get("show_idle_orb", True))
         for var, txt in ((self.autostart, "Lancer Jarvis au démarrage de Windows (en arrière-plan)"),
@@ -143,7 +154,7 @@ class Wizard:
         self.sens.set(round((0.75 - cfg.get("wake_threshold", 0.35)) / 0.06))
         self.sens.pack(side="right")
 
-        label("6 · VÉRIFICATION DU PC")
+        label("7 · VÉRIFICATION DU PC")
         self.diag = tk.Frame(f, bg=CARD); self.diag.pack(fill="x")
         threading.Thread(target=self.run_checks, daemon=True).start()
 
@@ -203,6 +214,19 @@ class Wizard:
             self.w.after(0, lambda: (self.mic_status.config(text=msg, fg=col), self.start_meter()))
         threading.Thread(target=run, daemon=True).start()
 
+    def test_voice(self):
+        v = self.voices[max(0, self.voice.current())][0]
+        name = self.name.get().strip() or "Monsieur"
+        def run():
+            from .voice import Voice
+            fake = type("V", (), {})()
+            fake.cfg = dict(self.cfg, voice=v); fake.speaking = threading.Event(); fake.on_state = lambda *a: None
+            try:
+                Voice.speak(fake, f"Bonjour {name}. Je suis Jarvis, à votre service.")
+            except Exception as e:
+                self.w.after(0, lambda: self.mic_status.config(text=f"Voix indisponible : {e}", fg=RED))
+        threading.Thread(target=run, daemon=True).start()
+
     def draw_meter(self):
         c = self.meter; c.delete("all")
         wdt = c.winfo_width() or 500
@@ -256,6 +280,7 @@ class Wizard:
         self.cfg.update(groq_api_key=self.key.get().strip(), user_name=self.name.get().strip() or "Monsieur",
                         input_device=self.device(), show_idle_orb=self.orb.get(),
                         music_service=self.services[max(0, self.music.current())][0],
+                        voice=self.voices[max(0, self.voice.current())][0],
                         wake_threshold=round(0.75 - self.sens.get() * 0.06, 2), _autostart=self.autostart.get())
         config.save(self.cfg)
         if self.stream:
