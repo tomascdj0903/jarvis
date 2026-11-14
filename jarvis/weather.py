@@ -78,7 +78,7 @@ def locate(city: str = ""):
 def weather(city: str = "", day: str = "aujourd'hui") -> str:
     """Résumé parlé de la météo. day : aujourd'hui, demain, après-demain, ou un jour de la semaine."""
     lat, lon, name, _ = locate(city)
-    d = requests.get("https://api.open-meteo.com/v1/forecast", timeout=8, params={
+    d = requests.get("https://api.open-meteo.com/v1/forecast", timeout=15, params={
         "latitude": lat, "longitude": lon, "timezone": "auto", "forecast_days": 7,
         "current": "temperature_2m,apparent_temperature,weather_code,wind_speed_10m",
         "daily": "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max"}).json()

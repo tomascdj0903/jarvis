@@ -339,13 +339,16 @@ def selftest() -> int:
         from .weather import weather
         out.append("INFO météo Nice demain : " + weather("Nice", "demain"))
         out.append("INFO météo position auto : " + weather("", "aujourd'hui"))
+    except Exception as e:
+        out.append(f"WARN météo : {e!r}")
+    try:
         from . import actions
         for q in ("nahar pnl", "naha pnl", "au dd pnl", "alors on dance stromae"):
             cq = actions.correct_query(q)
             vid = actions._youtube_id(cq + " audio")
             out.append(f"INFO musique « {q} » -> « {cq} » -> https://youtu.be/{vid}")
     except Exception as e:
-        out.append(f"WARN météo : {e!r}")
+        out.append(f"WARN musique : {e!r}")
     report = Path(sys.executable).parent / "selftest.txt"
     report.write_text("\n".join(out) + f"\nRESULT {'OK' if ok else 'FAIL'}\n", encoding="utf-8")
     return 0 if ok else 1
