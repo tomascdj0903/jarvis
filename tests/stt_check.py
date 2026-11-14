@@ -18,6 +18,7 @@ ps = ("Add-Type -AssemblyName System.Speech;"
 subprocess.run(["powershell", "-NoProfile", "-Command", ps], check=True)
 stt_local.download()
 print("moteurs disponibles :", stt_local.providers())
+print("puces IA (NPU)      :", [str(d.ep_name) for d in stt_local.npu_devices()] or "aucune sur cette machine")
 print("moteur utilisé      :", stt_local.engine_name())
 t0 = time.time()
 text = stt_local.transcribe_wav(open(wav, "rb").read(), "en")

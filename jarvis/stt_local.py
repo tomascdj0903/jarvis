@@ -54,10 +54,39 @@ def download(progress=lambda p: None):
 
 
 # ------------------------------------------------------------------ moteur
+def _register_plugins():
+    """onnxruntime-qnn 2.x / openvino récents sont des « plugins » : il faut les enregistrer."""
+    import onnxruntime as ort
+    if _state.get("plugins_done"):
+        return
+    _state["plugins_done"] = True
+    for mod, ep in (("onnxruntime_qnn", "QNNExecutionProvider"), ("onnxruntime_openvino", "OpenVINOExecutionProvider")):
+        try:
+            m = __import__(mod)
+            lib = m.get_library_path() if hasattr(m, "get_library_path") else None
+            if lib and hasattr(ort, "register_execution_provider_library"):
+                ort.register_execution_provider_library(ep, lib)
+        except Exception:
+            pass
+
+
+def npu_devices():
+    """Puces IA (NPU) détectées par ONNX Runtime."""
+    import onnxruntime as ort
+    _register_plugins()
+    try:
+        return [d for d in ort.get_ep_devices() if str(d.device.type).upper().endswith("NPU")]
+    except Exception:
+        return []
+
+
 def providers():
     import onnxruntime as ort
-    avail = ort.get_available_providers()
-    order = ["QNNExecutionProvider", "OpenVINOExecutionProvider", "DmlExecutionProvider", "CPUExecutionProvider"]
+    _register_plugins()
+    avail = list(ort.get_available_providers())
+    if npu_devices():
+        avail.insert(0, "NPU")
+    order = ["NPU", "QNNExecutionProvider", "OpenVINOExecutionProvider", "DmlExecutionProvider", "CPUExecutionProvider"]
     return [p for p in order if p in avail]
 
 
@@ -71,9 +100,16 @@ def _load():
     used = None
     for p in provs:  # on garde le premier accélérateur qui accepte le modèle
         try:
-            enc = ort.InferenceSession(str(DIR / "encoder.onnx"), opts, providers=[p])
-            dec = ort.InferenceSession(str(DIR / "decoder.onnx"), opts, providers=[p])
-            used = p
+            if p == "NPU":  # sélection automatique « préférer la puce IA » (ONNX Runtime ≥ 1.22)
+                o = ort.SessionOptions()
+                o.set_provider_selection_policy(ort.OrtExecutionProviderDevicePolicy.PREFER_NPU)
+                enc = ort.InferenceSession(str(DIR / "encoder.onnx"), o)
+                dec = ort.InferenceSession(str(DIR / "decoder.onnx"), o)
+            else:
+                enc = ort.InferenceSession(str(DIR / "encoder.onnx"), opts, providers=[p])
+                dec = ort.InferenceSession(str(DIR / "decoder.onnx"), opts, providers=[p])
+            # moteur RÉELLEMENT utilisé (ONNX Runtime peut retomber sur le processeur)
+            used = enc.get_providers()[0]
             break
         except Exception:
             continue
