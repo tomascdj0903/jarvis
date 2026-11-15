@@ -131,8 +131,9 @@ def _contents(messages):
             except Exception:
                 args = {}
             p = {"functionCall": {"name": fn["name"], "args": args}}
-            if call["id"] in _signatures:
-                p["thoughtSignature"] = _signatures[call["id"]]
+            # Gemini 3 exige une signature sur chaque appel d'outil de l'historique ; pour ceux faits par
+            # un autre modèle (Groq), Google prévoit cette valeur spéciale qui saute la vérification.
+            p["thoughtSignature"] = _signatures.get(call["id"], "skip_thought_signature_validator")
             parts.append(p)
         if parts:
             contents.append({"role": "model" if role == "assistant" else "user", "parts": parts})

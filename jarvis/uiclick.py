@@ -98,7 +98,24 @@ def find(target: str, deadline=4.0):
 
 
 def click(target: str):
-    """Clique l'élément trouvé. Renvoie un message, ou None si rien de sûr n'a été trouvé (=> vision)."""
+    """Clic précis, fait dans un PETIT PROCESSUS À PART : la bibliothèque UI Automation rend le processus
+    « conscient du DPI », ce qui déplaçait l'orbe de Jarvis au milieu de l'écran. Isolé, plus aucun effet."""
+    import json
+    import subprocess
+    import sys
+    cmd = [sys.executable, "--uiclick", target] if getattr(sys, "frozen", False) else \
+          [sys.executable, "-m", "jarvis.uiclick", target]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=12, creationflags=0x08000000,
+                           encoding="utf-8", errors="replace")
+        line = next((l for l in reversed(r.stdout.splitlines()) if l.startswith("{")), "{}")
+        return json.loads(line).get("result")
+    except Exception:
+        return None
+
+
+def click_here(target: str):
+    """(Dans le processus à part) clique l'élément trouvé, ou None si rien de sûr (=> vision)."""
     try:
         ctrl, sc = find(target)
     except Exception:
@@ -114,3 +131,19 @@ def click(target: str):
         except Exception:
             return None
     return f"Clic sur « {name[:60]} »."
+
+
+def cli(target: str):
+    import json
+    import sys
+    try:
+        res = click_here(target)
+    except Exception:
+        res = None
+    sys.stdout.write(json.dumps({"result": res}, ensure_ascii=False) + "\n")
+    sys.stdout.flush()
+
+
+if __name__ == "__main__":
+    import sys
+    cli(" ".join(sys.argv[1:]))

@@ -493,6 +493,10 @@ def selftest() -> int:
 
 
 def main():
+    if len(sys.argv) >= 3 and sys.argv[1] == "--uiclick":  # clic précis, isolé dans son propre processus
+        from .uiclick import cli
+        cli(" ".join(sys.argv[2:]))
+        return
     if len(sys.argv) >= 2 and sys.argv[1] == "--selftest":
         sys.exit(selftest())
     if len(sys.argv) >= 5 and sys.argv[1] == "--apply-update":

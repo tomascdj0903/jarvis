@@ -222,7 +222,9 @@ class Brain:
                 break
             time.sleep(min(float(r.headers.get("retry-after", wait) or wait), 8))
             r = self._post(messages, tools)
-        if r.status_code in (400, 404) and "model" in r.text.lower():
+        if r.status_code == 400 and "tool call validation failed" in r.text.lower():
+            r = self._post(messages, tools)  # le modèle a raté un paramètre d'outil : on redemande une fois
+        if r.status_code in (400, 404) and "model" in r.text.lower() and "tool call" not in r.text.lower():
             # modèle retiré ou inaccessible : on en choisit un autre et on le garde
             from . import config
             new = self.pick_model()
@@ -303,8 +305,15 @@ class Brain:
         tainted, last, done_list = False, "", []
         results_summary = ""
         for _ in range(4):  # quelques tours d'outils max
-            msg = self._call(messages, tools=not tainted)
+            try:
+                msg = self._call(messages, tools=not tainted)
+            except Exception:
+                if self.history and self.history[-1].get("role") == "user":
+                    self.history.pop()  # pas de question orpheline qui fausserait la suite
+                raise
             calls = msg.get("tool_calls") or []
+            if not calls and not (msg.get("content") or "").strip() and not last and not results_summary:
+                msg = self._call(messages, tools=False)  # réponse vide : on redemande une simple réponse parlée
             if not calls:
                 reply = (msg.get("content") or last or results_summary or "Je n'ai rien pu faire pour cette demande.").strip()
                 self.history.append({"role": "assistant", "content": reply})

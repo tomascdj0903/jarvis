@@ -3,6 +3,7 @@ enregistrement de la commande, transcription (Whisper via Groq), synthèse (edge
 import asyncio
 import ctypes
 import io
+import logging
 import os
 import tempfile
 import threading
@@ -15,6 +16,9 @@ import sounddevice as sd
 
 RATE = 16000
 CHUNK = 1280  # 80 ms, format attendu par openWakeWord
+
+
+log = logging.getLogger("jarvis")
 
 
 class Voice:
@@ -167,12 +171,22 @@ class Voice:
         try:
             path = os.path.join(tempfile.gettempdir(), f"jarvis_{int(time.time()*1000)}.mp3")
             self.stop_speech.clear()
-            try:
-                asyncio.run(edge_tts.Communicate(text, self.cfg["voice"], rate="+5%").save(path))
+            ok, t0 = False, time.time()
+            for attempt in range(2):  # 2 essais avant de passer à la voix Windows (qui change le timbre)
+                try:
+                    asyncio.run(asyncio.wait_for(
+                        edge_tts.Communicate(text, self.cfg["voice"], rate="+5%").save(path), timeout=8))
+                    ok = os.path.exists(path) and os.path.getsize(path) > 0
+                    if ok:
+                        break
+                except Exception as e:
+                    log.warning("voix edge-tts (essai %d) : %s", attempt + 1, str(e)[:120])
+            if ok:
+                log.info("voix prête en %.1f s", time.time() - t0)
                 _play_mp3(path, self.stop_speech)
-            except Exception:
-                if not self.stop_speech.is_set():
-                    _speak_windows(text)  # voix Windows hors ligne
+            elif not self.stop_speech.is_set():
+                log.warning("voix de secours Windows utilisée")
+                _speak_windows(text)  # voix Windows hors ligne
             try:
                 os.remove(path)
             except OSError:

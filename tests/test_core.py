@@ -334,6 +334,10 @@ def test_gemini_native():
     assert img[0]["parts"][1] == {"inline_data": {"mime_type": "image/jpeg", "data": "QUJD"}}
     assert G.keys("AQ.a, AIzaB ;AQ.c") == ["AQ.a", "AIzaB", "AQ.c"]
     assert not G.check("sk-123")[0]
+    _, c = G._contents([{"role": "user", "content": "x"}, {"role": "assistant", "content": "", "tool_calls": [
+        {"id": "groq1", "function": {"name": "set_volume", "arguments": "{}"}}]},
+        {"role": "tool", "tool_call_id": "groq1", "content": "ok"}])
+    assert c[1]["parts"][0]["thoughtSignature"] == "skip_thought_signature_validator"  # appel venu de Groq
     print("gemini natif OK")
 
 
