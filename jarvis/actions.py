@@ -646,12 +646,66 @@ def resolve_song(query: str) -> str:
     return artist  # à défaut : l'artiste seul (le 1er résultat est en général son titre le plus écouté)
 
 
+def _send_char(ch: str):
+    """Tape UN caractère quelle que soit la disposition du clavier (AZERTY : « / » n'a pas de touche simple)."""
+    from ctypes import wintypes
+
+    class KI(ctypes.Structure):
+        _fields_ = [("wVk", wintypes.WORD), ("wScan", wintypes.WORD), ("dwFlags", wintypes.DWORD),
+                    ("time", wintypes.DWORD), ("dwExtraInfo", ctypes.c_size_t)]
+
+    class INP(ctypes.Structure):
+        class _U(ctypes.Union):
+            _fields_ = [("ki", KI), ("pad", ctypes.c_byte * 32)]
+        _anonymous_ = ("u",)
+        _fields_ = [("type", wintypes.DWORD), ("u", _U)]
+    seq = (INP * 2)()
+    for i, flags in enumerate((0x0004, 0x0004 | 0x0002)):  # KEYEVENTF_UNICODE, puis relâché
+        seq[i].type = 1
+        seq[i].ki = KI(0, ord(ch), flags, 0, 0)
+    user32.SendInput(2, ctypes.byref(seq), ctypes.sizeof(INP))
+
+
+def _ytm_play_in_window(query: str) -> bool:
+    """YouTube Music déjà ouvert : on cherche ET on lance DANS cette fenêtre (« / » = barre de recherche),
+    puis on clique le titre trouvé. Aucune nouvelle fenêtre. False si ça n'a pas marché."""
+    wins = app_windows("youtube music")
+    if not wins:
+        return False
+    hwnd = wins[0]
+    if user32.IsIconic(hwnd):
+        user32.ShowWindow(hwnd, 9)
+    _force_front(hwnd); time.sleep(0.5)
+    if user32.GetForegroundWindow() != hwnd:
+        return False
+    _press(0x1B); time.sleep(0.2)      # Échap : quitte un champ éventuel
+    _send_char("/"); time.sleep(0.4)  # raccourci YouTube Music : barre de recherche
+    user32.keybd_event(0x11, 0, 0, 0); user32.keybd_event(0x41, 0, 0, 0)  # Ctrl+A : remplace l'ancienne recherche
+    user32.keybd_event(0x41, 0, 2, 0); user32.keybd_event(0x11, 0, 2, 0)
+    type_text(query, submit=True)
+    time.sleep(3.0)                   # résultats
+    try:
+        from . import uiclick
+        done = uiclick.click(query)
+    except Exception:
+        done = None
+    log.info("YouTube Music dans la fenêtre ouverte : %s", done or "titre non cliqué")
+    return bool(done)
+
+
 def play_music(query: str, service: str = "youtube") -> str:
     """Lance un titre/artiste sur le service choisi, sans clé API ni compte Premium.
     youtube / youtube_music : lecture automatique de la 1re vidéo trouvée.
     deezer : ouvre directement le titre trouvé. spotify : ouvre la recherche puis lance la lecture."""
     import webbrowser
     service = (service or "youtube").lower()
+    if re.search(r"\b(titres? (que j'ai )?likes?|playlist (des )?likes?|mes likes|j'aime|titres aimes|coups? de coeur)\b",
+                 query.lower()) and service in ("youtube", "youtube_music"):
+        url = "https://music.youtube.com/watch?list=LM" if service == "youtube_music" else "https://www.youtube.com/playlist?list=LL"
+        if not open_in_installed_app("youtube music" if service == "youtube_music" else "youtube", url):
+            open_url(url)
+        _autoplay(after=3)
+        return "Je lance vos titres likés."
     query = resolve_song(query)
     try:
         if service in ("youtube", "youtube_music"):
@@ -668,6 +722,9 @@ def play_music(query: str, service: str = "youtube") -> str:
                     break
             if not vid:
                 return f"Rien trouvé pour « {query} »."
+            if service == "youtube_music" and _ytm_play_in_window(query):  # reste dans la fenêtre déjà ouverte
+                _autoplay(after=2)
+                return f"Je lance « {query} »."
             host = "music.youtube.com" if service == "youtube_music" else "www.youtube.com"
             url = f"https://{host}/watch?v={vid}"
             # appli installée (YouTube Music / YouTube installés depuis Chrome ou Edge) : on reste dedans
