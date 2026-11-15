@@ -219,10 +219,20 @@ class Jarvis:
                 else:
                     log.info("routeur local")
                 self.say(reply)
+                from . import feedback
+                feedback.check_reply(self.cfg, text, reply)
             except Exception as e:
                 import time as _t
                 log.exception("loop")
                 msg = str(e)
+                try:
+                    import traceback
+                    from . import feedback
+                    where = traceback.extract_tb(e.__traceback__)[-1]
+                    feedback.record(self.cfg, "exception", "",
+                                    f"{type(e).__name__}: {msg[:200]} @ {where.filename.split(chr(92))[-1]}:{where.lineno}")
+                except Exception:
+                    pass
                 fails += 1
                 audio = any(k in msg.lower() for k in ("portaudio", "device", "stream", "host error", "mme"))
                 if "401" in msg:
@@ -456,7 +466,7 @@ def selftest() -> int:
     step("moteurs ONNX (accélération)", lambda: ", ".join(__import__("jarvis.stt_local", fromlist=["x"]).providers()))
     step("dossiers Windows réels", lambda: config.known_folder("Documents"))
     step("contrôle média Windows (winrt)", lambda: f"{len(__import__('jarvis.media', fromlist=['sessions']).sessions())} session(s)")
-    step("modules", lambda: [__import__(f"jarvis.{m}") for m in ("actions", "brain", "router", "settings", "updater", "hud", "voice", "util", "media", "vision", "gemini", "uiclick", "weather", "macros", "assistant", "stt_local")] and "ok")
+    step("modules", lambda: [__import__(f"jarvis.{m}") for m in ("actions", "brain", "router", "settings", "updater", "hud", "voice", "util", "media", "vision", "gemini", "uiclick", "feedback", "weather", "macros", "assistant", "stt_local")] and "ok")
     step("routeur", lambda: __import__("jarvis.router", fromlist=["route"]).route("raconte une blague") is None or 1/0)
     offline = "--offline" in sys.argv
     try:  # test réseau réel (informatif, ne bloque pas la publication)

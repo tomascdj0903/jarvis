@@ -336,6 +336,28 @@ def test_uiclick_clean():
     assert _score("tomas", "Thomas Martin") < 0.6 <= _score("tomas", "Tomas")
 
 
+def test_feedback(tmp=None):
+    import tempfile, pathlib
+    import jarvis.feedback as F
+    F.LOCAL = pathlib.Path(tempfile.mkdtemp()) / "a_corriger.jsonl"
+    sent = []
+    F._post = lambda body: sent.append(body)
+    F.threading.Thread = lambda target, args, daemon: type("T", (), {"start": lambda self: target(*args)})()
+    cfg = {"install_id": "test", "send_reports": True}
+    assert F.mask("écris à tom@gmail.com au 06 12 34 56 78 https://x.fr/a C:\\Users\\33622\\Docs") == \
+        "écris à <email> au <nombre> <lien> C:\\Users\\<moi>\\Docs"
+    F.check_reply(cfg, "ouvre truc", "Application « truc » introuvable.")
+    assert not sent  # 1re fois : noté seulement
+    F.check_reply(cfg, "ouvre machin", "Application « machin » introuvable.")
+    assert len(sent) == 1 and sent[0]["kind"] == "echec_outil" and sent[0]["occurrences"] == 2
+    F.check_reply(cfg, "ouvre bidule", "Application « bidule » introuvable.")
+    assert len(sent) == 1  # une seule fois par jour et par erreur
+    F.check_reply(cfg, "ouvre spotify", "spotify lancé.")
+    cfg["send_reports"] = False
+    F.record(cfg, "exception", "", "KeyError: x @ app.py:12")
+    assert len(sent) == 1
+
+
 def test_speakable():
     from jarvis.util import speakable as sp
     assert sp("À votre service, Maître.Comment puis‑je vous aider ?") == "À votre service, Maître. Comment puis-je vous aider ?"
@@ -488,5 +510,5 @@ def test_phase3():
 
 
 if __name__ == "__main__":
-    test_router(); test_weather_routing(); test_exe_machine(); test_versions(); test_brain_tool_loop(); test_open_app_real(); test_search_and_correct(); test_phase1(); test_injection_guard(); test_phase2(); test_phase3(); test_gemini_native(); test_speakable(); test_uiclick_clean()
+    test_router(); test_weather_routing(); test_exe_machine(); test_versions(); test_brain_tool_loop(); test_open_app_real(); test_search_and_correct(); test_phase1(); test_injection_guard(); test_phase2(); test_phase3(); test_gemini_native(); test_speakable(); test_uiclick_clean(); test_feedback()
     print(f"TOUS LES TESTS OK ({len(CASES)} phrases)")

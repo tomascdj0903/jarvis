@@ -44,7 +44,9 @@ DEFAULTS = {
     "stt_model": "whisper-large-v3-turbo",
     "voice": "fr-FR-HenriNeural",
     "language": "fr",
-    "personality": "cash",   # poli | complice | cash
+    "personality": "cash",
+    "send_reports": True,    # erreurs récurrentes anonymes -> correction automatique
+    "install_id": "",   # poli | complice | cash
     "user_name": "Monsieur",
     "wake_threshold": 0.35,
     "show_idle_orb": True,

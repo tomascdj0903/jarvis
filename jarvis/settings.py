@@ -251,7 +251,9 @@ class Wizard:
         label("7 · VIE PRIVÉE")
         self.logu = tk.BooleanVar(value=cfg.get("log_utterances", False))
         self.lockp = tk.BooleanVar(value=cfg.get("pause_when_locked", True))
+        self.reports = tk.BooleanVar(value=cfg.get("send_reports", True))
         for var, txt in ((self.lockp, "Ne pas écouter quand la session Windows est verrouillée"),
+                         (self.reports, "Envoyer les erreurs qui reviennent (anonymes) pour que Jarvis se corrige tout seul"),
                          (self.logu, "Journal détaillé : enregistrer mes phrases (pour le débogage)")):
             tk.Checkbutton(f, text=txt, variable=var, bg=BG, fg=WHITE, selectcolor=CARD, activebackground=BG,
                            activeforeground=WHITE, font=("Segoe UI", 10), anchor="w").pack(fill="x")
@@ -453,7 +455,7 @@ class Wizard:
                         home_city=self.city.get().strip(),
                         log_utterances=self.logu.get(), pause_when_locked=self.lockp.get(),
                         conversation_mode=self.conv.get(), duck_music=self.duck.get(),
-                        morning_briefing=self.brief.get(), planning_key=self.pkey.get().strip(),
+                        morning_briefing=self.brief.get(), send_reports=self.reports.get(), planning_key=self.pkey.get().strip(),
                         stt_engine=self.stts[max(0, self.stt.current())][0],
                         language=self.langs[max(0, self.lang.current())][0],
                         personality=self.persos[max(0, self.perso.current())][0],
