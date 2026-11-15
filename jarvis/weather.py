@@ -110,17 +110,43 @@ def weather(city: str = "", day: str = "aujourd'hui") -> str:
 
 
 def ask_web(question: str, cfg) -> str:
-    """Réponse à jour (actualité, résultats, prix…) via le modèle Groq avec recherche web intégrée."""
+    """Réponse à jour (actualité, sorties, prix…) : Groq avec recherche web intégrée, sinon Gemini + Google Search."""
+    import logging
+    log = logging.getLogger("jarvis")
+    sysmsg = ("Réponds en français, en 1 à 3 phrases courtes, sans liens ni markdown : le texte sera lu à voix haute. "
+              "Si on te demande un titre seul, donne uniquement le titre.")
+    key = (cfg.get("groq_api_key") or "").strip()
     for model in ("groq/compound-mini", "groq/compound"):
+        if not key:
+            break
         try:
             r = requests.post("https://api.groq.com/openai/v1/chat/completions", timeout=40,
-                              headers={"Authorization": f"Bearer {cfg['groq_api_key'].strip()}"},
+                              headers={"Authorization": f"Bearer {key}"},
                               json={"model": model, "max_tokens": 300, "messages": [
-                                  {"role": "system", "content": "Réponds en français, en 1 à 3 phrases courtes, "
-                                   "sans liens ni markdown : le texte sera lu à voix haute."},
-                                  {"role": "user", "content": question}]})
+                                  {"role": "system", "content": sysmsg}, {"role": "user", "content": question}]})
             if r.ok:
-                return r.json()["choices"][0]["message"]["content"].strip()
-        except Exception:
-            continue
+                txt = (r.json()["choices"][0]["message"].get("content") or "").strip()
+                if txt:
+                    return txt
+            log.warning("recherche web Groq %s : %s %s", model, r.status_code, r.text[:150])
+        except Exception as e:
+            log.warning("recherche web Groq %s : %s", model, e)
+    # Gemini avec l'outil Google Search (API native, clés AIza… et AQ.…)
+    from . import gemini
+    for k in gemini.keys(cfg.get("gemini_api_key")):
+        for model in [m for m in gemini.models(k) if "lite" not in m][:3] + ["gemini-2.5-flash"]:
+            try:
+                r = requests.post(f"{gemini.BASE}/models/{model}:generateContent", headers=gemini._h(k), timeout=40,
+                                  json={"systemInstruction": {"parts": [{"text": sysmsg}]},
+                                        "contents": [{"role": "user", "parts": [{"text": question}]}],
+                                        "tools": [{"google_search": {}}],
+                                        "generationConfig": {"maxOutputTokens": 300, "temperature": 0.2}})
+                if r.ok:
+                    parts = (r.json().get("candidates") or [{}])[0].get("content", {}).get("parts") or []
+                    txt = " ".join(p.get("text", "") for p in parts if not p.get("thought")).strip()
+                    if txt:
+                        return txt
+                log.warning("recherche web Gemini %s : %s %s", model, r.status_code, r.text[:150])
+            except Exception as e:
+                log.warning("recherche web Gemini %s : %s", model, e)
     return "Je n'ai pas pu trouver la réponse en ligne."

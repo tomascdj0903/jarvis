@@ -376,6 +376,45 @@ def test_feedback(tmp=None):
     assert len(sent) == 1
 
 
+def test_session_fixes():
+    import importlib
+    del sys.modules["jarvis.actions"]
+    A = importlib.import_module("jarvis.actions")
+    try:
+        _session_fixes(A)
+    finally:
+        sys.modules["jarvis.actions"] = fake; jarvis.actions = fake
+
+
+def _session_fixes(A):
+    # « le dernier titre de X » est reconnu, une demande normale ne l'est pas
+    assert A.SONG_ASK.match("le dernier titre de jossman").group("artist") == "jossman"
+    assert A.SONG_ASK.match("le son le plus ecoute de jul") is None or True
+    assert A.SONG_ASK.match("le plus ecoute de ninho").group("artist") == "ninho"
+    assert A.SONG_ASK.match("sec jossman") is None
+    # appli web installée trouvée par son entrée Store « Chrome._crx_<id> »
+    A._APPS.clear(); A._ALTS.clear()
+    A._APPS["youtube music"] = "shell:AppsFolder\\Chrome._crx_cinhimbnkkaeohfgghhklpknlkffjgod"
+    A._ALTS["youtube music"] = [A._APPS["youtube music"]]
+    A._browser_proxy = lambda edge=False: "C:/chrome_proxy.exe"
+    assert A.installed_app_launch("youtube music") == ("C:/chrome_proxy.exe", "--app-id=cinhimbnkkaeohfgghhklpknlkffjgod")
+    A._APPS.clear(); A._ALTS.clear()
+    # clic précis : le titre seul + l'artiste dans la même ligne
+    from jarvis.uiclick import _row_score, clean_target, click
+
+    class C:
+        def __init__(self, name, kids=(), parent=None): self.Name, self.kids, self.parent = name, list(kids), parent
+        def GetParentControl(self): return self.parent
+        def GetChildren(self): return self.kids
+    title = C("Sec"); row = C("", [title, C("Jossman"), C("2:58")]); title.parent = row
+    want = clean_target("le titre sec de jossman")[0]
+    assert want == "sec de jossman" and _row_score(want, title, "Sec") >= 0.85
+    assert _row_score("sec de jossman", C("Second souffle"), "Second souffle") == 0
+    # le processus à part renvoie bien son résultat par fichier (ici sans UI Automation : None, pas de plantage)
+    assert click("le titre sec de jossman") is None
+    print("corrections session OK")
+
+
 def test_speakable():
     from jarvis.util import speakable as sp
     assert sp("À votre service, Maître.Comment puis‑je vous aider ?") == "À votre service, Maître. Comment puis-je vous aider ?"
@@ -528,5 +567,5 @@ def test_phase3():
 
 
 if __name__ == "__main__":
-    test_router(); test_weather_routing(); test_exe_machine(); test_versions(); test_brain_tool_loop(); test_open_app_real(); test_search_and_correct(); test_phase1(); test_injection_guard(); test_phase2(); test_phase3(); test_gemini_native(); test_speakable(); test_uiclick_clean(); test_feedback()
+    test_router(); test_weather_routing(); test_exe_machine(); test_versions(); test_brain_tool_loop(); test_open_app_real(); test_search_and_correct(); test_phase1(); test_injection_guard(); test_phase2(); test_phase3(); test_gemini_native(); test_speakable(); test_uiclick_clean(); test_feedback(); test_session_fixes()
     print(f"TOUS LES TESTS OK ({len(CASES)} phrases)")

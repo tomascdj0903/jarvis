@@ -2,6 +2,8 @@
 import base64
 import io
 
+import re
+
 import requests
 
 PREFERRED = ["meta-llama/llama-4-scout-17b-16e-instruct", "meta-llama/llama-4-maverick-17b-128e-instruct"]
@@ -116,7 +118,9 @@ def click_on(target: str, cfg, confirm) -> str:
         return f"Je ne trouve pas « {target} » à l'écran."
     u = ctypes.windll.user32
     u.SetCursorPos(*pos)  # on montre d'abord où l'on va cliquer
-    if not confirm(f"Je clique ici, sur {target} ?"):
+    risky = re.search(r"supprim|effac|delete|payer|achet|command|envoy|valid|desinstall|désinstall|vider|formater|acheter",
+                      target, re.I)
+    if risky and not confirm(f"Je clique ici, sur {target} ?"):
         return "Clic annulé."
     u.SetCursorPos(*pos); time.sleep(0.05)
     u.mouse_event(0x0002, 0, 0, 0, 0); u.mouse_event(0x0004, 0, 0, 0, 0)

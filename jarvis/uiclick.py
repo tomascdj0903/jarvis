@@ -50,6 +50,27 @@ def _score(want, name):
     return s
 
 
+def _row_score(want, ctrl, name):
+    """Liste de musiques / vidéos : le titre est un élément, l'artiste un autre de la même ligne.
+    Si tous les mots du nom sont dans la demande, on complète avec les textes de la ligne (parent, grand-parent)."""
+    nw = [x for x in _norm(name).split() if x not in STOP]
+    ww = set(want.split())
+    if not nw or not all(x in ww for x in nw):
+        return 0.0
+    texts, node = [name], ctrl
+    for _ in range(2):
+        try:
+            node = node.GetParentControl()
+            if node is None:
+                break
+            texts += [c.Name for c in node.GetChildren()[:12] if c.Name and len(c.Name) < 120]
+        except Exception:
+            break
+        if _score(want, " ".join(texts)) >= 0.99:
+            break
+    return min(_score(want, " ".join(texts)), 1.0) - 0.05
+
+
 def find(target: str, deadline=4.0):
     """Meilleur élément visible de la fenêtre active dont le nom correspond. (ctrl, score) ou (None, 0)."""
     import ctypes
@@ -76,6 +97,8 @@ def find(target: str, deadline=4.0):
                 if not name or len(name) > 300:
                     continue
                 sc = _score(want, name)
+                if sc < 0.85:
+                    sc = max(sc, _row_score(want, ctrl, name))
                 if sc < 0.6:
                     continue
                 if ctrl.ControlType in good_types:
@@ -101,23 +124,34 @@ def click(target: str):
     """Clic précis, fait dans un PETIT PROCESSUS À PART : la bibliothèque UI Automation rend le processus
     « conscient du DPI », ce qui déplaçait l'orbe de Jarvis au milieu de l'écran. Isolé, plus aucun effet."""
     import json
+    import logging
+    import os
     import subprocess
     import sys
-    cmd = [sys.executable, "--uiclick", target] if getattr(sys, "frozen", False) else \
-          [sys.executable, "-m", "jarvis.uiclick", target]
+    import tempfile
+    out = os.path.join(tempfile.gettempdir(), f"jarvis_uiclick_{os.getpid()}.json")
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=12, creationflags=0x08000000,
-                           encoding="utf-8", errors="replace")
-        line = next((l for l in reversed(r.stdout.splitlines()) if l.startswith("{")), "{}")
-        return json.loads(line).get("result")
-    except Exception:
+        os.remove(out)
+    except OSError:
+        pass
+    # Jarvis.exe n'a pas de console (stdout = None) : le résultat passe par un petit fichier
+    cmd = [sys.executable, "--uiclick", out, target] if getattr(sys, "frozen", False) else \
+          [sys.executable, "-m", "jarvis.uiclick", out, target]
+    try:
+        subprocess.run(cmd, timeout=12, creationflags=0x08000000 if os.name == "nt" else 0)
+        with open(out, encoding="utf-8") as f:
+            data = json.load(f)
+        logging.getLogger("jarvis").info("clic précis « %s » : %s", target, data)
+        return data.get("result")
+    except Exception as e:
+        logging.getLogger("jarvis").warning("clic précis « %s » : %s", target, e)
         return None
 
 
-def click_here(target: str):
+def click_here(target: str, found=None):
     """(Dans le processus à part) clique l'élément trouvé, ou None si rien de sûr (=> vision)."""
     try:
-        ctrl, sc = find(target)
+        ctrl, sc = found or find(target)
     except Exception:
         return None
     if ctrl is None or sc < 0.85:
@@ -133,17 +167,19 @@ def click_here(target: str):
     return f"Clic sur « {name[:60]} »."
 
 
-def cli(target: str):
+def cli(out: str, target: str):
     import json
-    import sys
+    res, err, best = None, "", ""
     try:
-        res = click_here(target)
-    except Exception:
-        res = None
-    sys.stdout.write(json.dumps({"result": res}, ensure_ascii=False) + "\n")
-    sys.stdout.flush()
+        ctrl, sc = find(target)
+        best = f"{ctrl.Name[:60]} ({sc:.2f})" if ctrl is not None else "rien"
+        res = click_here(target, (ctrl, sc))
+    except Exception as e:
+        err = str(e)[:200]
+    with open(out, "w", encoding="utf-8") as f:
+        json.dump({"result": res, "best": best, "error": err}, f, ensure_ascii=False)
 
 
 if __name__ == "__main__":
     import sys
-    cli(" ".join(sys.argv[1:]))
+    cli(sys.argv[1], " ".join(sys.argv[2:]))

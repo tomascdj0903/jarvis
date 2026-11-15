@@ -1,5 +1,7 @@
 """Tout ce que Jarvis sait faire sur le PC. Chaque fonction renvoie un texte court
 que le cerveau utilise pour formuler sa réponse."""
+import logging
+import re
 import ctypes
 import datetime
 import os
@@ -10,6 +12,7 @@ from pathlib import Path
 
 from . import config
 
+log = logging.getLogger("jarvis")
 user32 = ctypes.windll.user32 if os.name == "nt" else None
 
 # ---------- Premier plan ----------
@@ -489,23 +492,79 @@ def _shortcut_info(lnk: str):
     return lines[0].strip(), lines[1].strip()
 
 
-def open_in_installed_app(name: str, url: str) -> bool:
-    """Ouvre l'URL DANS l'appli web installée (Chrome/Edge « Installer l'application »), pas dans un onglet."""
+def _browser_proxy(edge=False):
+    """Chemin de chrome_proxy.exe / msedge_proxy.exe."""
+    roots = [os.environ.get("ProgramFiles", r"C:\Program Files"), os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"),
+             os.environ.get("LOCALAPPDATA", "")]
+    rel = r"Microsoft\Edge\Application\msedge_proxy.exe" if edge else r"Google\Chrome\Application\chrome_proxy.exe"
+    return next((str(Path(r) / rel) for r in roots if r and (Path(r) / rel).exists()), None)
+
+
+def installed_app_launch(name: str):
+    """(programme, arguments) pour lancer l'appli web installée « name » (Chrome/Edge), ou None."""
     if not _APPS:
         scan_apps()
-    lnk = _APPS.get(name, "")
-    if not str(lnk).lower().endswith(".lnk"):
-        return False
+    for t in [_APPS.get(name, "")] + _ALTS.get(name, []):
+        t = str(t)
+        if t.lower().endswith(".lnk"):
+            try:
+                target, args = _shortcut_info(t)
+            except Exception:
+                continue
+            if "--app-id=" in args and target.lower().endswith(("_proxy.exe", "chrome.exe", "msedge.exe")):
+                return target, args
+        m = re.search(r"(chrome|msedge)\._crx_([a-p]{32})", t, re.I)
+        if m:
+            proxy = _browser_proxy(edge=m.group(1).lower() == "msedge")
+            if proxy:
+                return proxy, f"--app-id={m.group(2)}"
+    return None
+
+
+def open_in_installed_app(name: str, url: str) -> bool:
+    """Ouvre l'URL DANS l'appli web installée (« Installer YouTube Music » de Chrome/Edge), pas dans un onglet."""
     try:
-        target, args = _shortcut_info(lnk)
-        if "--app-id=" not in args or not target.lower().endswith(("chrome_proxy.exe", "msedge_proxy.exe", "chrome.exe", "msedge.exe")):
+        found = installed_app_launch(name)
+        log.info("appli installée %s : %s", name, found or f"aucune ({_ALTS.get(name)})")
+        if not found:
             return False
+        target, args = found
         subprocess.Popen(f'"{target}" {args} --app-launch-url-for-shortcuts-menu-item="{url}"',
-                         creationflags=0x08000000)  # chaîne passée telle quelle à Windows (guillemets du raccourci gardés)
+                         creationflags=0x08000000)
         bring_to_front(exes=(), title_hint=name.split()[0], delay=1.5, tries=8)
         return True
-    except Exception:
+    except Exception as e:
+        log.warning("appli installée %s : %s", name, e)
         return False
+
+
+SONG_ASK = re.compile(r"^(?:le |la |un |une )?(?:(?P<kind>dernier|derniere|nouveau|nouvelle|plus recent|plus ecoute|plus connu|plus populaire|"
+                      r"meilleur|meilleure|plus gros|plus streame|tube|hit)\s*)(?:titre|son|morceau|single|chanson|clip|album|tube|hit)?s?"
+                      r"\s*(?:de |d'|du |des )(?P<artist>.+)$", re.I)
+
+
+def resolve_song(query: str) -> str:
+    """« le dernier titre de Jossman » -> « <vrai titre> Jossman » (recherche web). Sinon la requête telle quelle."""
+    import unicodedata
+    q = "".join(c for c in unicodedata.normalize("NFD", query.lower()) if unicodedata.category(c) != "Mn").strip()
+    m = SONG_ASK.match(q)
+    if not m:
+        return query
+    artist = m.group("artist").strip()
+    kind = m.group("kind")
+    newest = kind.startswith(("dernier", "derniere", "nouveau", "nouvelle", "plus recent"))
+    try:
+        from . import config as _c, weather
+        ans = weather.ask_web(("Quel est le titre le plus récent (dernière sortie) de l'artiste " if newest else
+                               "Quel est le titre le plus écouté de l'artiste ") + artist +
+                              " ? Réponds UNIQUEMENT par le titre exact, sans guillemets ni autre mot.", _c.load())
+        title = ans.strip().strip("«»\"'. ").split("\n")[0]
+        if title and "pas pu" not in title.lower() and len(title) < 80:
+            log.info("titre trouvé pour « %s » : %s", query, title)
+            return f"{title} {artist}"
+    except Exception as e:
+        log.warning("recherche du titre : %s", e)
+    return artist  # à défaut : l'artiste seul (le 1er résultat est en général son titre le plus écouté)
 
 
 def play_music(query: str, service: str = "youtube") -> str:
@@ -514,6 +573,7 @@ def play_music(query: str, service: str = "youtube") -> str:
     deezer : ouvre directement le titre trouvé. spotify : ouvre la recherche puis lance la lecture."""
     import webbrowser
     service = (service or "youtube").lower()
+    query = resolve_song(query)
     try:
         if service in ("youtube", "youtube_music"):
             import re as _re
@@ -951,10 +1011,24 @@ def power_mode(mode: str) -> str:
     key = "economie" if any(k in m for k in ("eco", "batterie", "energie")) else \
           "performance" if any(k in m for k in ("perf", "max", "jeu", "puissan")) else "equilibre"
     guid, msg = POWER_MODES[key]
-    r = subprocess.run(["powercfg", "/overlaysetactive", guid], capture_output=True, text=True, creationflags=0x08000000)
-    if r.returncode != 0:
+    import uuid as _uuid
+
+    class GUID(ctypes.Structure):
+        _fields_ = [("bytes", ctypes.c_ubyte * 16)]
+    g = GUID(); g.bytes[:] = list(_uuid.UUID(guid).bytes_le)
+    pp = ctypes.windll.powrprof
+    ok = pp.PowerSetActiveOverlayScheme(ctypes.byref(g)) == 0  # API utilisée par le curseur de Windows
+    cur = GUID()
+    if ok and pp.PowerGetActualOverlayScheme(ctypes.byref(cur)) == 0:
+        ok = bytes(cur.bytes) == bytes(g.bytes)  # vérifié : le mode est bien actif
+    if not ok:
+        r = subprocess.run(["powercfg", "/overlaysetactive", guid], capture_output=True, text=True,
+                           creationflags=0x08000000)
+        ok = r.returncode == 0
+    log.info("mode d'alimentation %s : %s", key, "ok" if ok else "échec")
+    if not ok:
         os.startfile("ms-settings:powersleep")
-        return "Je n'ai pas pu changer le mode directement ; j'ai ouvert les réglages d'alimentation."
+        return "Je n'ai pas pu changer le mode moi-même ; j'ai ouvert les réglages d'alimentation."
     return msg
 
 
@@ -1001,10 +1075,12 @@ def arrange_window(name: str, position: str, exclude=()) -> str:
     class MI(ctypes.Structure):
         _fields_ = [("cbSize", wintypes.DWORD), ("rcMonitor", wintypes.RECT), ("rcWork", wintypes.RECT),
                     ("dwFlags", wintypes.DWORD)]
+    user32.MonitorFromWindow.restype = ctypes.c_void_p
+    user32.MonitorFromWindow.argtypes = [wintypes.HWND, wintypes.DWORD]
     mon = user32.MonitorFromWindow(hwnd, 2)
     if "autre" in pos or "ecran" in pos and "deux" in pos:
         mons = []
-        cb = ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_double)(
+        cb = ctypes.WINFUNCTYPE(wintypes.BOOL, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, wintypes.LPARAM)(
             lambda h, *_: mons.append(h) or 1)
         user32.EnumDisplayMonitors(None, None, cb, 0)
         if len(mons) > 1:
