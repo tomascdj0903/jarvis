@@ -480,6 +480,34 @@ def _deezer_track(query: str):
     return d[0]["id"] if d else None
 
 
+def _shortcut_info(lnk: str):
+    """(cible, arguments) d'un raccourci .lnk."""
+    r = subprocess.run(["powershell", "-NoProfile", "-Command",
+                        "$s=(New-Object -ComObject WScript.Shell).CreateShortcut($args[0]); $s.TargetPath; $s.Arguments", lnk],
+                       capture_output=True, text=True, timeout=10, creationflags=0x08000000)
+    lines = r.stdout.splitlines() + ["", ""]
+    return lines[0].strip(), lines[1].strip()
+
+
+def open_in_installed_app(name: str, url: str) -> bool:
+    """Ouvre l'URL DANS l'appli web installée (Chrome/Edge « Installer l'application »), pas dans un onglet."""
+    if not _APPS:
+        scan_apps()
+    lnk = _APPS.get(name, "")
+    if not str(lnk).lower().endswith(".lnk"):
+        return False
+    try:
+        target, args = _shortcut_info(lnk)
+        if "--app-id=" not in args or not target.lower().endswith(("chrome_proxy.exe", "msedge_proxy.exe", "chrome.exe", "msedge.exe")):
+            return False
+        subprocess.Popen(f'"{target}" {args} --app-launch-url-for-shortcuts-menu-item="{url}"',
+                         creationflags=0x08000000)  # chaîne passée telle quelle à Windows (guillemets du raccourci gardés)
+        bring_to_front(exes=(), title_hint=name.split()[0], delay=1.5, tries=8)
+        return True
+    except Exception:
+        return False
+
+
 def play_music(query: str, service: str = "youtube") -> str:
     """Lance un titre/artiste sur le service choisi, sans clé API ni compte Premium.
     youtube / youtube_music : lecture automatique de la 1re vidéo trouvée.
@@ -491,10 +519,10 @@ def play_music(query: str, service: str = "youtube") -> str:
             import re as _re
             base = _re.sub(r"\b(de|du|des|la|le|les|d')\b", " ", query)
             base = " ".join(base.split()) or query
-            fixed = correct_query(base)
+            fixed = correct_query(query)
             suffix = " audio" if service == "youtube_music" else ""
             vid = None
-            for q in dict.fromkeys((fixed, base, query)):  # corrigé, puis brut si rien trouvé
+            for q in dict.fromkeys((fixed, query, base)):  # corrigé, puis tel que dit, puis sans les petits mots
                 vid = _youtube_id(q + suffix)
                 if vid:
                     query = q
@@ -502,7 +530,10 @@ def play_music(query: str, service: str = "youtube") -> str:
             if not vid:
                 return f"Rien trouvé pour « {query} »."
             host = "music.youtube.com" if service == "youtube_music" else "www.youtube.com"
-            open_url(f"https://{host}/watch?v={vid}")
+            url = f"https://{host}/watch?v={vid}"
+            # appli installée (YouTube Music / YouTube installés depuis Chrome ou Edge) : on reste dedans
+            if not open_in_installed_app("youtube music" if service == "youtube_music" else "youtube", url):
+                open_url(url)
             _autoplay(after=3)
             return f"Je lance « {query} »."
         if service == "deezer":
@@ -784,7 +815,7 @@ def screenshot(mode: str = "screen") -> str:
                        timeout=10, creationflags=0x08000000)
     except Exception:
         pass
-    return "Capture enregistrée dans vos Images et copiée, prête à coller."
+    return "Capture enregistrée dans Images, Captures d'écran, Jarvis, et copiée : prête à coller."
 
 
 def open_last_screenshot() -> str:

@@ -6,7 +6,8 @@ import time
 import unicodedata
 
 FILLER = r"^(sur |la |le |les |l'|un |une |ce |cette |cet )*"
-KINDS = r"(video|bouton|lien|profil|onglet|icone|menu|image|photo|case|option|element|titre|chaine|playlist|dossier|fichier|article|message|conversation|contact)s?"
+KINDS = r"(video|bouton|lien|profil|onglet|icone|menu|image|photo|case|option|element|titre|chaine|playlist|dossier|fichier|article|message|conversation|contact|musique|chanson|son|morceau|album|artiste|clip|son)s?"
+STOP = {"de", "du", "des", "la", "le", "les", "un", "une", "et", "a", "en", "d'", "l'", "sur", "par"}
 WHERE = r"\b(a|sur|dans) (l'ecran|la page|la fenetre)\b|\ben (haut|bas)( a (gauche|droite))?\b|\ba (gauche|droite)\b"
 
 
@@ -34,7 +35,7 @@ def clean_target(target: str):
 
 
 def _score(want, name):
-    w = [x for x in want.split() if len(x) > 1]
+    w = [x for x in want.split() if len(x) > 1 and x not in STOP] or [x for x in want.split() if len(x) > 1]
     n = _norm(name)
     if not w or not n:
         return 0.0

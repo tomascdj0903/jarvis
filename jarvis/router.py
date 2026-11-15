@@ -113,7 +113,8 @@ RULES = [
                                   else "window" if re.search(r"fenetre", m.group("r"))
                                   else "all" if re.search(r"tous les ecrans|deux ecrans|les ecrans", m.group("r"))
                                   else "screen")),
-    (r"\b(ouvre|montre|affiche)( moi)? (la )?derniere capture", lambda m: actions.open_last_screenshot()),
+    (r"\b(ouvre|montre|affiche|ou est)( moi)? (la )?(derniere )?(capture|screenshot|screen)( d'ecran)?( que tu (as|viens de) (faite?|prendre|prise))?$",
+     lambda m: actions.open_last_screenshot()),
     (r"^rappelle(?: moi)?\b", lambda m: _remind(m.string)),
     (r"^(mets |lance |demarre )?(un )?minuteur (de |d')?.*\d", lambda m: _timer(m.string)),
     (r"^(quels sont |liste |dis moi |lis )?(mes|les) rappels$|^j'ai des rappels$", lambda m: __import__("jarvis.assistant", fromlist=["x"]).list_reminders()),

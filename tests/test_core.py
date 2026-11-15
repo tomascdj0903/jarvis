@@ -93,6 +93,7 @@ CASES = {
     "prends une capture d'une zone": "SHOT:zone",
     "fais un screen de tous les écrans": "SHOT:all",
     "montre-moi la dernière capture": "LASTSHOT",
+    "ouvre moi la capture d'écran que tu as fait.": "LASTSHOT",
     "ouvre mon historique YouTube": "Historique YouTube ouvert.",
     "ouvre Google et cherche la météo marine": "WEB:la meteo marine",
     "cherche recette de crêpes sur Google": "WEB:recette de crepes",
@@ -334,6 +335,9 @@ def test_uiclick_clean():
     assert clean_target("le profil de leane a l'ecran")[:2] == ("leane", "profil")
     assert _score("devine le pokemon grace a son dresseur", "Devine le Pokémon grâce à son Dresseur ! Saurez-vous…") > 1
     assert _score("tomas", "Thomas Martin") < 0.6 <= _score("tomas", "Tomas")
+    w = clean_target("la musique armistice de jossman")
+    assert w[:2] == ("armistice de jossman", "musique"), w
+    assert _score(w[0], "Armistice • Jossman • 3:12") >= 0.85
 
 
 def test_feedback(tmp=None):
