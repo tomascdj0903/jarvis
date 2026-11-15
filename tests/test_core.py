@@ -362,6 +362,7 @@ def test_feedback(tmp=None):
     F.LOCAL = pathlib.Path(tempfile.mkdtemp()) / "a_corriger.jsonl"
     sent = []
     F._post = lambda body: sent.append(body)
+    real_thread = F.threading.Thread
     F.threading.Thread = lambda target, args, daemon: type("T", (), {"start": lambda self: target(*args)})()
     cfg = {"install_id": "test", "send_reports": True}
     assert F.mask("écris à tom@gmail.com au 06 12 34 56 78 https://x.fr/a C:\\Users\\33622\\Docs") == \
@@ -376,6 +377,7 @@ def test_feedback(tmp=None):
     cfg["send_reports"] = False
     F.record(cfg, "exception", "", "KeyError: x @ app.py:12")
     assert len(sent) == 1
+    F.threading.Thread = real_thread  # ne pas casser les autres tests (subprocess utilise des threads)
 
 
 def test_session_fixes():
