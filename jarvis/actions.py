@@ -719,6 +719,53 @@ def web_search(query: str) -> str:
     return f"Recherche « {query} » ouverte."
 
 
+def _browser_window(hint=""):
+    """Fenêtre de navigateur la plus récente (ou celle dont le titre contient « hint »)."""
+    wins = [w for w in _windows() if w[1] in BROWSERS]
+    if hint:
+        best = max(wins, key=lambda w: _sim(hint, w[2]), default=None)
+        if best and _sim(hint, best[2]) >= 0.5:
+            return best
+        return None
+    return wins[0] if wins else None
+
+
+def _keys(*vks):
+    for vk in vks:
+        user32.keybd_event(vk, 0, 0, 0)
+    for vk in reversed(vks):
+        user32.keybd_event(vk, 0, 2, 0)
+
+
+def close_tab(name: str = "") -> str:
+    """Ferme l'onglet actif du navigateur (ou celui dont le titre correspond à « name »)."""
+    w = _browser_window(name)
+    if not w:
+        return f"Je ne trouve pas d'onglet « {name} »." if name else "Aucun navigateur ouvert."
+    _force_front(w[0]); time.sleep(0.3)
+    if user32.GetForegroundWindow() != w[0]:
+        return "Je n'ai pas pu mettre le navigateur au premier plan."
+    _keys(0x11, 0x57)  # Ctrl+W
+    return "Onglet fermé."
+
+
+def close_window(name: str = "") -> str:
+    """Ferme la fenêtre au premier plan (ou celle dont le titre correspond), comme la croix."""
+    if name:
+        best = max(_windows(), key=lambda w: _sim(name, w[2]), default=None)
+        if not best or _sim(name, best[2]) < 0.5:
+            return f"Je ne trouve pas de fenêtre « {name} »."
+        hwnd, exe, title = best
+    else:
+        hwnd = user32.GetForegroundWindow()
+        info = next((w for w in _windows() if w[0] == hwnd), (hwnd, "", ""))
+        exe, title = info[1], info[2]
+    if exe in PROTECTED:
+        return "Je ne ferme pas cette fenêtre système."
+    user32.PostMessageW(hwnd, 0x0010, 0, 0)  # WM_CLOSE
+    return f"Fenêtre « {title[:40]} » fermée." if title else "Fenêtre fermée."
+
+
 def show_images(query: str) -> str:
     import urllib.parse
     open_url("https://www.google.com/search?udm=2&q=" + urllib.parse.quote(query))

@@ -10,6 +10,7 @@ KNOWN = ("spotify", "youtube music", "youtube", "discord", "brawlhalla", "planni
 fake.open_app = lambda n: f"open:{n}" if n in KNOWN else f"Application « {n} » introuvable."
 fake.play_music = lambda q, s: f"play[{s}]:{q}"
 fake.open_url = lambda u: None
+fake.close_tab = lambda n="": f"TAB:{n}"; fake.close_window = lambda n="": "WIN"
 fake.show_images = lambda q: f"IMG:{q}"; fake.web_search = lambda q: f"WEB:{q}"
 fake.resume = lambda: "RESUME"; fake.pause_music = lambda: "PAUSE"; fake.what_is_playing = lambda: "NOWPLAYING"
 fake.WEB_APPS = {"youtube music": "", "youtube": "", "deezer": "", "netflix": ""}
@@ -79,6 +80,10 @@ CASES = {
     "ouvre le dossier Jarvis Windows": "open_folder:('jarvis windows',)",
     "Ouvre Google et affiche moi une photo de Adriana Lima.": "IMG:adriana lima",
     "montre-moi des images de la tour Eiffel": "IMG:la tour eiffel",
+    "affiche moi une image de Christophe Collomb sur Google.": "IMG:christophe collomb",
+    "ferme l'onglet.": "TAB:",
+    "ferme la page de Christophe Colomb.": "TAB:christophe colomb",
+    "ferme la fenêtre": "WIN",
     "ouvre Google et cherche la météo marine": "WEB:la meteo marine",
     "cherche recette de crêpes sur Google": "WEB:recette de crepes",
     # IA / pas de la musique

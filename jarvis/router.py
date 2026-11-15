@@ -87,8 +87,11 @@ def _new_chat(m):
 
 
 RULES = [
-    (r"\b(affiche|montre|cherche|trouve|ouvre|mets)( moi)? (une |des |la |les )?(photos?|images?|portraits?) (de |d'|du |des )(?P<q>.+)$",
+    (r"\b(affiche|montre|cherche|trouve|ouvre|mets)( moi)? (une |des |la |les )?(photos?|images?|portraits?) (de |d'|du |des )(?P<q>.+?)( sur (google|internet|le web|le navigateur))?$",
      lambda m: actions.show_images(m.group("q"))),
+    (r"^ferme( moi)? (l'onglet|cet onglet|l'onglet actif|la page|cette page)$", lambda m: actions.close_tab()),
+    (r"^ferme( moi)? (l'onglet|la page) (de |d'|du |des |sur )?(?P<n>.+)$", lambda m: actions.close_tab(m.group("n"))),
+    (r"^ferme( moi)? (la fenetre|cette fenetre)$", lambda m: actions.close_window()),
     (r"^(ouvre|va sur) google (et |puis )?(cherche|recherche|tape|trouve)( moi)? (?P<q>.+)$",
      lambda m: actions.web_search(m.group("q"))),
     (r"^(cherche|recherche|tape)( moi)? (?P<q>.+?) sur google$", lambda m: actions.web_search(m.group("q"))),
