@@ -10,6 +10,7 @@ KNOWN = ("spotify", "youtube music", "youtube", "discord", "brawlhalla", "planni
 fake.open_app = lambda n: f"open:{n}" if n in KNOWN else f"Application « {n} » introuvable."
 fake.play_music = lambda q, s: f"play[{s}]:{q}"
 fake.open_url = lambda u: None
+fake.show_images = lambda q: f"IMG:{q}"; fake.web_search = lambda q: f"WEB:{q}"
 fake.resume = lambda: "RESUME"; fake.pause_music = lambda: "PAUSE"; fake.what_is_playing = lambda: "NOWPLAYING"
 fake.WEB_APPS = {"youtube music": "", "youtube": "", "deezer": "", "netflix": ""}
 fake._find_app = lambda n: (n, "x") if n in ("spotify", "discord", "brawlhalla") else (None, None)
@@ -76,6 +77,10 @@ CASES = {
     "j'aimerais écouter Aya Nakamura s'il te plaît": f"play[{DEF}]:aya nakamura",
     "ouvre mes téléchargements": "open_folder:('telechargements',)",
     "ouvre le dossier Jarvis Windows": "open_folder:('jarvis windows',)",
+    "Ouvre Google et affiche moi une photo de Adriana Lima.": "IMG:adriana lima",
+    "montre-moi des images de la tour Eiffel": "IMG:la tour eiffel",
+    "ouvre Google et cherche la météo marine": "WEB:la meteo marine",
+    "cherche recette de crêpes sur Google": "WEB:recette de crepes",
     # IA / pas de la musique
     "lance un nouveau chat sur Claude IA.": "AICHAT",
     "J'ai envie de lancer un nouveau chat sur CloudCode.": "AICHAT",

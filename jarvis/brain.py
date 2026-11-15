@@ -72,8 +72,10 @@ TOOLS = [
           "lis ce texte, résume cette page, où est tel bouton, quelle erreur…).", {"question": S}, ["question"]),
     _tool("click_on", "Clique sur un bouton ou un élément visible à l'écran décrit par son nom (« le bouton Envoyer », "
           "« la croix », « Accepter »). Jarvis montre la position et demande confirmation.", {"target": S}, ["target"]),
-    _tool("web_search", "Ouvre une page Google dans le navigateur. UNIQUEMENT si l'utilisateur demande explicitement "
-          "d'ouvrir ou d'afficher une recherche.", {"query": S}, ["query"]),
+    _tool("web_search", "Ouvre une recherche Google dans le navigateur, quand l'utilisateur demande d'ouvrir, d'afficher "
+          "ou de chercher quelque chose sur Google.", {"query": S}, ["query"]),
+    _tool("show_images", "Affiche des photos / images de quelque chose dans le navigateur (Google Images).",
+          {"query": S}, ["query"]),
     _tool("open_website", "Ouvre un site web.", {"url": S}, ["url"]),
     _tool("type_text", "Tape du texte dans la fenêtre active.", {"text": S}, ["text"]),
     _tool("add_reminder", "Crée un rappel ou un minuteur (gardé même si le PC redémarre). when = expression française "
@@ -215,6 +217,7 @@ class Brain:
             "organize_downloads": lambda: a.organize_downloads(cfg),
             "system": lambda: a.system(args["action"]),
             "web_search": lambda: a.web_search(args["query"]),
+            "show_images": lambda: a.show_images(args["query"]),
             "click_on": lambda: vision.click_on(args["target"], cfg, self.confirm),
             "look_at_screen": lambda: vision.look(args["question"], cfg),
             "get_weather": lambda: weather.weather(args.get("city", ""), args.get("day", "aujourd'hui")),

@@ -262,6 +262,8 @@ WEB_APPS = {
     "youtube music": "https://music.youtube.com", "yt music": "https://music.youtube.com",
     "youtube musique": "https://music.youtube.com",
     "youtube": "https://www.youtube.com", "deezer": "https://www.deezer.com",
+    "google": "https://www.google.com", "google images": "https://images.google.com", "google maps": "https://maps.google.com",
+    "maps": "https://maps.google.com", "wikipedia": "https://fr.wikipedia.org",
     "spotify web": "https://open.spotify.com", "netflix": "https://www.netflix.com",
     "prime video": "https://www.primevideo.com", "disney": "https://www.disneyplus.com",
     "twitch": "https://www.twitch.tv", "gmail": "https://mail.google.com",
@@ -715,6 +717,12 @@ def now() -> str:
 def web_search(query: str) -> str:
     open_url(f"https://www.google.com/search?q={query}")
     return f"Recherche « {query} » ouverte."
+
+
+def show_images(query: str) -> str:
+    import urllib.parse
+    open_url("https://www.google.com/search?udm=2&q=" + urllib.parse.quote(query))
+    return f"Voici des images de {query}."
 
 
 def open_website(url: str) -> str:
