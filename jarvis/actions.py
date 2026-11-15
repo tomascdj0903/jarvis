@@ -303,21 +303,58 @@ def _launch_app(key: str, target: str):
     raise last
 
 
+BROWSER_SUFFIX = (" - google chrome", " - microsoft edge", " - brave", " - opera", " - mozilla firefox", " — mozilla firefox")
+APP_ALIASES = [(r"\byoutube musique\b", "youtube music"), (r"\byt music\b", "youtube music"), (r"\byou tube\b", "youtube"),
+               (r"^(l'application|l'appli|l'app|le logiciel|le programme|le jeu|application|appli) ", "")]
+
+
+def app_windows(name: str):
+    """Fenêtres d'APPLI (pas un onglet de navigateur) dont le titre contient « name », la plus récente d'abord."""
+    want = name.lower()
+    out = []
+    try:
+        wins = _windows()
+    except Exception:
+        return []
+    for hwnd, exe, title in wins:
+        t = title.lower()
+        if not t or exe == "jarvis.exe" or t.endswith(BROWSER_SUFFIX):
+            continue
+        if want in t or t == want or _sim(name, title) >= 0.99:
+            out.append(hwnd)
+    return out
+
+
+def focus_app(name: str):
+    """Si l'appli est déjà ouverte : on l'affiche au lieu d'en ouvrir une 2e. Message, ou None."""
+    wins = app_windows(name)
+    if not wins:
+        return None
+    if user32.IsIconic(wins[0]):
+        user32.ShowWindow(wins[0], 9)
+    _force_front(wins[0])
+    return f"{name} affiché."
+
+
 def open_app(name: str) -> str:
     import webbrowser
     n = name.lower().strip().removesuffix(".").strip()
+    for a, b in APP_ALIASES:
+        n = re.sub(a, b, n).strip()
     if n.count(",") >= 2:
         return "Donnez-moi une seule application à ouvrir."
     if not _APPS:
         scan_apps()
     if n in _APPS:                       # 1. appli installée, nom exact
+        shown = focus_app(n)             #    déjà ouverte : on l'affiche, on n'en ouvre pas une 2e
+        if shown:
+            return shown
         try:
             _launch_app(n, _APPS[n])
         except OSError:
             return f"Impossible de lancer {n} : son raccourci semble cassé, réinstallez l'application."
         bring_to_front(exes=(), title_hint=n.split()[0], delay=2.0, tries=10)
         return f"{n} lancé."
-    import re
     m = re.search(r"^(.+?) (?:sur|avec|dans|via) (youtube music|yt music|youtube|spotify|deezer)$", n)
     if m:  # « PNL sur YouTube » demandé comme appli par l'IA : c'est de la musique
         svc = {"yt music": "youtube_music", "youtube music": "youtube_music"}.get(m.group(2), m.group(2))
@@ -326,6 +363,8 @@ def open_app(name: str) -> str:
     if site in WEB_APPS:                 # 2. service web connu, nom EXACT uniquement
         open_url(WEB_APPS[site]); return f"{site.title()} ouvert."
     key, target = _find_app(n)           # 3. appli installée, nom approché
+    if target and focus_app(key):
+        return f"{key} affiché."
     if not target:
         # 4. fenêtre déjà ouverte (onglet actif, document…), 5. favori du navigateur
         return switch_window(n) or open_bookmark(n) or f"Application « {name} » introuvable."
@@ -529,9 +568,23 @@ def open_in_installed_app(name: str, url: str) -> bool:
         if not found:
             return False
         target, args = found
+        before = set(app_windows(name))
         subprocess.Popen(f'"{target}" {args} --app-launch-url-for-shortcuts-menu-item="{url}"',
                          creationflags=0x08000000)
-        bring_to_front(exes=(), title_hint=name.split()[0], delay=1.5, tries=8)
+        new = None
+        for _ in range(20):  # jusqu'à 6 s pour que la fenêtre apparaisse
+            time.sleep(0.3)
+            fresh = [h for h in app_windows(name) if h not in before]
+            if fresh:
+                new = fresh[0]
+                break
+        if new:
+            for h in before:   # une seule fenêtre YouTube Music : l'ancienne est fermée
+                user32.PostMessageW(h, 0x0010, 0, 0)
+            _force_front(new)
+        elif before:          # l'appli a réutilisé sa fenêtre : on l'affiche
+            _force_front(next(iter(before)))
+        log.info("appli installée %s : fenêtre %s (avant : %d)", name, "nouvelle" if new else "réutilisée", len(before))
         return True
     except Exception as e:
         log.warning("appli installée %s : %s", name, e)

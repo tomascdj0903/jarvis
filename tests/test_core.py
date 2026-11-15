@@ -399,6 +399,15 @@ def _session_fixes(A):
     A._browser_proxy = lambda edge=False: "C:/chrome_proxy.exe"
     assert A.installed_app_launch("youtube music") == ("C:/chrome_proxy.exe", "--app-id=cinhimbnkkaeohfgghhklpknlkffjgod")
     A._APPS.clear(); A._ALTS.clear()
+    # « YouTube Musique » = l'appli installée YouTube Music, et si elle est déjà ouverte on l'affiche
+    A._APPS["youtube music"] = "C:/x/YouTube Music.lnk"
+    A._windows = lambda: [(11, "chrome.exe", "YouTube Music - Google Chrome"), (22, "chrome.exe", "Sec - YouTube Music")]
+    shown = []
+    A._force_front = lambda h: shown.append(h)
+    A.user32 = type("U", (), {"IsIconic": staticmethod(lambda h: 0), "ShowWindow": staticmethod(lambda h, c: 0)})()
+    assert A.open_app("l'application YouTube Musique") == "youtube music affiché." and shown == [22]
+    assert A.app_windows("youtube music") == [22]  # l'onglet du navigateur n'est pas l'appli
+    A._APPS.clear(); A._ALTS.clear()
     # clic précis : le titre seul + l'artiste dans la même ligne
     from jarvis.uiclick import _row_score, clean_target, click
 
