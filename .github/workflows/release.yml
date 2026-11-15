@@ -65,7 +65,7 @@ jobs:
           $oww = (python -c "import openwakeword,os;print(os.path.dirname(openwakeword.__file__))").Trim()
           pyinstaller --noconfirm --clean --windowed --name Jarvis `
             --icon assets\jarvis.ico --add-data "assets;assets" --add-data "$oww;openwakeword" `
-            --collect-all onnxruntime --collect-all winrt --collect-all edge_tts --collect-all sounddevice `
+            --collect-all onnxruntime --collect-all winrt --collect-all edge_tts --collect-all sounddevice --collect-all uiautomation --collect-submodules comtypes `
             --hidden-import pystray._win32 --collect-submodules jarvis run_jarvis.py
       - name: Auto-test du .exe (tout est-il bien embarqué ?)
         shell: pwsh
@@ -117,7 +117,7 @@ jobs:
           $oww = (python -c "import openwakeword,os;print(os.path.dirname(openwakeword.__file__))").Trim()
           pyinstaller --noconfirm --clean --windowed --name Jarvis `
             --icon assets\jarvis.ico --add-data "assets;assets" --add-data "$oww;openwakeword" `
-            --collect-all onnxruntime --collect-all winrt --collect-all edge_tts --collect-all sounddevice `
+            --collect-all onnxruntime --collect-all winrt --collect-all edge_tts --collect-all sounddevice --collect-all uiautomation --collect-submodules comtypes `
             --hidden-import pystray._win32 --collect-submodules jarvis run_jarvis.py
       - name: Auto-test du .exe ARM64
         shell: pwsh

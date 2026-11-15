@@ -157,6 +157,15 @@ class Wizard:
         self.lang.current(next((i for i, (c, _) in enumerate(self.langs) if c == cfg.get("language", "fr")), 0))
         self.lang.pack(fill="x", ipady=4)
 
+        label("1 quinquies · CARACTÈRE DE JARVIS")
+        self.persos = [("poli", "Poli — majordome classique, vouvoiement"),
+                       ("complice", "Complice — humour, taquin, tutoie si vous tutoyez"),
+                       ("cash", "Cash — du répondant, parle cru, vannes et gros mots s'il le faut")]
+        self.perso = ttk.Combobox(f, values=[n for _, n in self.persos], state="readonly", style="J.TCombobox",
+                                  font=("Segoe UI", 10))
+        self.perso.current(next((i for i, (c, _) in enumerate(self.persos) if c == cfg.get("personality", "cash")), 2))
+        self.perso.pack(fill="x", ipady=4)
+
         label("2 · COMMENT DOIS-JE VOUS APPELER ?")
         self.name = entry(cfg.get("user_name", "Monsieur"))
 
@@ -447,6 +456,7 @@ class Wizard:
                         morning_briefing=self.brief.get(), planning_key=self.pkey.get().strip(),
                         stt_engine=self.stts[max(0, self.stt.current())][0],
                         language=self.langs[max(0, self.lang.current())][0],
+                        personality=self.persos[max(0, self.perso.current())][0],
                         **{k: e.get().strip() for k, e in self.extra.items()},
                         wake_threshold=round(0.75 - self.sens.get() * 0.06, 2), _autostart=self.autostart.get())
         config.save(self.cfg)

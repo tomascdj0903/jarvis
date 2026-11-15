@@ -752,15 +752,57 @@ def organize_downloads(cfg) -> str:
     return f"{moved} fichiers rangés dans Téléchargements."
 
 
+# ---------- Captures d'écran ----------
+def _kf(name):
+    from . import config as _c
+    return _c.known_folder(name)
+
+
+def screenshot(mode: str = "screen") -> str:
+    """Capture RÉELLE : écran entier (tous les écrans si « all ») ou fenêtre active, enregistrée dans
+    Images\\Captures d'écran\\Jarvis et copiée dans le presse-papiers. « zone » = outil de sélection Windows."""
+    import datetime
+    if mode == "zone":
+        subprocess.Popen(["explorer", "ms-screenclip:"])
+        return "Sélectionnez la zone à capturer."
+    from PIL import ImageGrab
+    if mode == "window":
+        from ctypes import wintypes
+        r = wintypes.RECT()
+        ctypes.windll.dwmapi.DwmGetWindowAttribute(user32.GetForegroundWindow(), 9, ctypes.byref(r), ctypes.sizeof(r))
+        img = ImageGrab.grab(bbox=(r.left, r.top, r.right, r.bottom), all_screens=True)
+    else:
+        img = ImageGrab.grab(all_screens=(mode == "all"))
+    folder = Path(_kf("Pictures")) / "Captures d'écran" / "Jarvis"
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / f"Capture {datetime.datetime.now():%Y-%m-%d %H-%M-%S}.png"
+    img.save(path)
+    try:  # copie dans le presse-papiers (Ctrl+V direct dans Discord, WhatsApp…)
+        subprocess.run(["powershell", "-NoProfile", "-STA", "-Command",
+                        "Add-Type -AssemblyName System.Windows.Forms,System.Drawing;"
+                        f"[Windows.Forms.Clipboard]::SetImage([Drawing.Image]::FromFile('{path}'))"],
+                       timeout=10, creationflags=0x08000000)
+    except Exception:
+        pass
+    return "Capture enregistrée dans vos Images et copiée, prête à coller."
+
+
+def open_last_screenshot() -> str:
+    folder = Path(_kf("Pictures")) / "Captures d'écran" / "Jarvis"
+    shots = sorted(folder.glob("*.png"), key=lambda p: p.stat().st_mtime) if folder.exists() else []
+    if not shots:
+        return "Aucune capture pour l'instant."
+    os.startfile(str(shots[-1]))
+    return "Voici la dernière capture."
+
+
 # ---------- Système ----------
 def system(action: str) -> str:
     if action == "lock":
         user32.LockWorkStation()
         return "Session verrouillée."
     if action == "screenshot":
-        _press(0x2C)  # Impr écran -> presse-papiers / OneDrive selon réglages
-        subprocess.Popen(["explorer", "ms-screenclip:"])
-        return "Outil de capture ouvert."
+        return screenshot("screen")
     if action == "shutdown":
         subprocess.run(["shutdown", "/s", "/t", "30"], creationflags=0x08000000)
         return "Arrêt dans 30 secondes. Dites « annule l'arrêt » pour annuler."

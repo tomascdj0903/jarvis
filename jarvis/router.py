@@ -105,7 +105,15 @@ RULES = [
     (r"\b(devoirs?|controles?)\b.*\b(aujourd'hui|demain|a faire|du jour|de nico|reste|rappel)|^(mes |les |quels sont les |c'est quoi les )?devoirs\b",
      lambda m: __import__("jarvis.assistant", fromlist=["x"]).planning_devoirs()),
     (r"^(ouvre|lance|affiche)( le| mon)? planning( partage)?$", lambda m: actions.open_app("planning partage")),
-    (r"^(clique|clic|appuie) (sur )?(?P<c>.+)$", lambda m: _click(m.group("c"))),
+    (r"^(clique|clic|appuie|tape) (sur )?(?P<c>.+)$", lambda m: _click(m.group("c"))),
+    (r"^(ouvre|selectionne|choisis|lance)( moi)? (?P<c>(le profil|la video|la conversation|la discussion|le lien|la playlist|la chaine|l'article|le message) .+)$",
+     lambda m: _click(m.group("c"))),
+    (r"\b(fais|prends|prend|faire|realise|effectue)( moi)?( un| une| la)? (screenshot|capture( d'ecran)?|screen|impression d'ecran)(?P<r>.*)$",
+     lambda m: actions.screenshot("zone" if re.search(r"zone|partie|selection|morceau", m.group("r"))
+                                  else "window" if re.search(r"fenetre", m.group("r"))
+                                  else "all" if re.search(r"tous les ecrans|deux ecrans|les ecrans", m.group("r"))
+                                  else "screen")),
+    (r"\b(ouvre|montre|affiche)( moi)? (la )?derniere capture", lambda m: actions.open_last_screenshot()),
     (r"^rappelle(?: moi)?\b", lambda m: _remind(m.string)),
     (r"^(mets |lance |demarre )?(un )?minuteur (de |d')?.*\d", lambda m: _timer(m.string)),
     (r"^(quels sont |liste |dis moi |lis )?(mes|les) rappels$|^j'ai des rappels$", lambda m: __import__("jarvis.assistant", fromlist=["x"]).list_reminders()),

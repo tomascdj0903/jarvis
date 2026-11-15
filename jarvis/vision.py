@@ -78,7 +78,8 @@ def locate(target: str, cfg):
     b64 = base64.b64encode(capture_jpeg(size_out=size)).decode()
     try:
         txt = _ask_image(cfg, "Trouve l'élément cliquable suivant sur cette capture d'écran : « " + target +
-                         " ». Réponds UNIQUEMENT en JSON : {\"found\": true/false, \"x\": 0-1000, \"y\": 0-1000} où x et y "
+                         " ». Le nom peut être approximatif (transcription vocale) : choisis l'élément le plus "
+                         "probable s'il y en a un clairement correspondant. Réponds UNIQUEMENT en JSON : {\"found\": true/false, \"x\": 0-1000, \"y\": 0-1000} où x et y "
                          "sont le centre de l'élément en millièmes de la largeur/hauteur.", b64, 80)
     except Exception as e:
         return str(e)
@@ -98,7 +99,17 @@ def click_on(target: str, cfg, confirm) -> str:
     """Clique sur un élément décrit à voix haute (expérimental, toujours avec confirmation)."""
     import ctypes
     import time
-    pos = locate(target, cfg)
+    try:  # 1. précis et gratuit : l'arbre d'accessibilité de la fenêtre (liens, boutons, titres…)
+        from . import uiclick
+        done = uiclick.click(target)
+        if done:
+            return done
+        want, kind, where = uiclick.clean_target(target)
+        if want or kind:
+            target = " ".join(x for x in (kind, want) if x) + (f", situé {where}" if where else "")
+    except Exception:
+        pass
+    pos = locate(target, cfg)  # 2. secours : capture d'écran + IA de vision
     if isinstance(pos, str):
         return f"Je n'arrive pas à analyser l'écran : {pos}."
     if not pos:

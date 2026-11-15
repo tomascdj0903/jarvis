@@ -442,6 +442,7 @@ def selftest() -> int:
     step("assets", lambda: all(config.resource(f"assets/{f}").exists() for f in ("jarvis.ico", "logo.png", "tray.png")) or 1/0)
     step("numpy+sounddevice", lambda: __import__("sounddevice").__version__)
     step("edge_tts", lambda: __import__("edge_tts").__name__)
+    step("uiautomation", lambda: __import__("uiautomation").GetRootControl().ClassName or "ok")
     step("pystray", lambda: __import__("pystray").__name__)
     def oww():
         from openwakeword.model import Model
@@ -455,7 +456,7 @@ def selftest() -> int:
     step("moteurs ONNX (accélération)", lambda: ", ".join(__import__("jarvis.stt_local", fromlist=["x"]).providers()))
     step("dossiers Windows réels", lambda: config.known_folder("Documents"))
     step("contrôle média Windows (winrt)", lambda: f"{len(__import__('jarvis.media', fromlist=['sessions']).sessions())} session(s)")
-    step("modules", lambda: [__import__(f"jarvis.{m}") for m in ("actions", "brain", "router", "settings", "updater", "hud", "voice", "util", "media", "vision", "gemini", "weather", "macros", "assistant", "stt_local")] and "ok")
+    step("modules", lambda: [__import__(f"jarvis.{m}") for m in ("actions", "brain", "router", "settings", "updater", "hud", "voice", "util", "media", "vision", "gemini", "uiclick", "weather", "macros", "assistant", "stt_local")] and "ok")
     step("routeur", lambda: __import__("jarvis.router", fromlist=["route"]).route("raconte une blague") is None or 1/0)
     offline = "--offline" in sys.argv
     try:  # test réseau réel (informatif, ne bloque pas la publication)

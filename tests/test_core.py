@@ -12,6 +12,7 @@ fake.play_music = lambda q, s: f"play[{s}]:{q}"
 fake.open_url = lambda u: None
 fake.close_tab = lambda n="": f"TAB:{n}"; fake.close_window = lambda n="": "WIN"
 fake.random_game = lambda s="": f"RAND:{s}"
+fake.screenshot = lambda m="screen": f"SHOT:{m}"; fake.open_last_screenshot = lambda: "LASTSHOT"
 fake.show_images = lambda q: f"IMG:{q}"; fake.web_search = lambda q: f"WEB:{q}"
 fake.resume = lambda: "RESUME"; fake.pause_music = lambda: "PAUSE"; fake.what_is_playing = lambda: "NOWPLAYING"
 fake.WEB_APPS = {"youtube music": "", "youtube": "", "deezer": "", "netflix": ""}
@@ -87,6 +88,11 @@ CASES = {
     "ferme la fenêtre": "WIN",
     "Allez Jarvis, lance n'importe quel jeu Steam au hasard.": "RAND:steam",
     "lance un jeu au hasard": "RAND:",
+    "fais un screenshot de mon écran.": "SHOT:screen",
+    "fais une capture d'écran de la fenêtre": "SHOT:window",
+    "prends une capture d'une zone": "SHOT:zone",
+    "fais un screen de tous les écrans": "SHOT:all",
+    "montre-moi la dernière capture": "LASTSHOT",
     "ouvre mon historique YouTube": "Historique YouTube ouvert.",
     "ouvre Google et cherche la météo marine": "WEB:la meteo marine",
     "cherche recette de crêpes sur Google": "WEB:recette de crepes",
@@ -320,6 +326,16 @@ def test_gemini_native():
     print("gemini natif OK")
 
 
+def test_uiclick_clean():
+    from jarvis.uiclick import clean_target, _score
+    assert clean_target("la video devine le pokemon grace a son dresseur")[:2] == ("devine le pokemon grace a son dresseur", "video")
+    assert clean_target("le profil t o m a s")[:2] == ("tomas", "profil")
+    assert clean_target("le profil en haut a gauche") == ("", "profil", "en haut a gauche")
+    assert clean_target("le profil de leane a l'ecran")[:2] == ("leane", "profil")
+    assert _score("devine le pokemon grace a son dresseur", "Devine le Pokémon grâce à son Dresseur ! Saurez-vous…") > 1
+    assert _score("tomas", "Thomas Martin") < 0.6 <= _score("tomas", "Tomas")
+
+
 def test_speakable():
     from jarvis.util import speakable as sp
     assert sp("À votre service, Maître.Comment puis‑je vous aider ?") == "À votre service, Maître. Comment puis-je vous aider ?"
@@ -472,5 +488,5 @@ def test_phase3():
 
 
 if __name__ == "__main__":
-    test_router(); test_weather_routing(); test_exe_machine(); test_versions(); test_brain_tool_loop(); test_open_app_real(); test_search_and_correct(); test_phase1(); test_injection_guard(); test_phase2(); test_phase3(); test_gemini_native(); test_speakable()
+    test_router(); test_weather_routing(); test_exe_machine(); test_versions(); test_brain_tool_loop(); test_open_app_real(); test_search_and_correct(); test_phase1(); test_injection_guard(); test_phase2(); test_phase3(); test_gemini_native(); test_speakable(); test_uiclick_clean()
     print(f"TOUS LES TESTS OK ({len(CASES)} phrases)")
