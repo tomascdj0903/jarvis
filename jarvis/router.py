@@ -87,6 +87,21 @@ def _new_chat(m):
 
 
 RULES = [
+    # Jarvis lui-même se met en veille (jamais l'ordinateur)
+    (r"^(?:(?:non|allez|ok|bon|bah|eh|he)\s+)*(?:jarvis\s+)?(mets toi|met toi|passe|va|retourne)( en)? (veille|pause|sommeil)$|^(?:(?:non|allez|ok|bon|bah|eh|he)\s+)*(?:jarvis\s+)?(dors|tais toi|chut|repose toi|veille|en veille|silence radio)$",
+     lambda m: "Je me mets en veille. Appelez-moi quand vous voulez."),
+    (r"^(mets|met|passe)( moi)? (l'ordinateur|l'ordi|le pc|mon pc|mon ordinateur|mon ordi) en veille$",
+     lambda m: actions.system("sleep") if getattr(route, "confirm", None) and route.confirm("Je mets l'ordinateur en veille ?")
+     else "Veille annulée."),
+    (r"\b(economie|economiseur) d'? ?energie\b|\bmode (economie|eco|batterie)\b",
+     lambda m: actions.power_mode("economie")),
+    (r"\bmode (performances?|performance maximale|max)\b", lambda m: actions.power_mode("performance")),
+    (r"\bmode equilibre\b", lambda m: actions.power_mode("equilibre")),
+    (r"^(?:(?:non|allez|ok|bon|bah|eh|he)\s+)*(?:jarvis\s+)?(mets|met|place|deplace|range)( moi)? (?P<a>.+?) (a|sur|en|dans) (la partie |le cote |la moitie )?(?P<pa>(en )?(haut |bas )?(a )?(gauche|droite))( de l'ecran)?"
+     r"( et (?P<b>.+?) (a|sur|en|dans) (la partie |le cote |la moitie )?(?P<pb>(en )?(haut |bas )?(a )?(gauche|droite))( de l'ecran)?)?$",
+     lambda m: actions.arrange_two(m.group("a"), m.group("pa"), m.group("b"), m.group("pb")) if m.group("b")
+     else actions.arrange_window(m.group("a"), m.group("pa"))),
+    (r"^(mets|met|passe)( moi)? (?P<a>.+?) en (plein ecran|grand)$", lambda m: actions.arrange_window(m.group("a"), "plein")),
     (r"\b(affiche|montre|cherche|trouve|ouvre|mets)( moi)? (une |des |la |les )?(photos?|images?|portraits?) (de |d'|du |des )(?P<q>.+?)( sur (google|internet|le web|le navigateur))?$",
      lambda m: actions.show_images(m.group("q"))),
     (r"\b(lance|joue|ouvre|mets)( moi)?( a)? (un|n'importe quel|n importe quel) (jeu|game)( (sur |de )?(?P<s>steam|epic( games)?))?.*(hasard|n'importe|importe lequel|aleatoire)?",
@@ -143,8 +158,8 @@ RULES = [
     (r"\b(son|volume)\b\D*?\b(a|au|sur)\s*(?P<v>\d{1,3})\s*(%|pour ?cent)?(?!.*lumin)", lambda m: actions.set_volume(int(m.group("v")))),
     (r"\b(luminosite|lumiere de l'ecran)\b\D*?\b(a|au|sur)\s*(?P<v>\d{1,3})\s*(%|pour ?cent)?(?!.*(son|volume))",
      lambda m: actions.set_brightness(int(m.group("v")))),
-    (r"\b(monte|augmente|plus fort)( le (son|volume))?", lambda m: actions.volume("up", 5)),
-    (r"\b(baisse|diminue|moins fort)( le (son|volume))?", lambda m: actions.volume("down", 5)),
+    (r"^(monte|augmente|plus fort)( le (son|volume))?( un peu| encore| a fond)?$", lambda m: actions.volume("up", 5)),
+    (r"^(baisse|diminue|moins fort)( le (son|volume))?( un peu| encore)?$", lambda m: actions.volume("down", 5)),
     (r"^(coupe|mute)( le)? (son|volume)$|^silence$", lambda m: actions.volume("mute")),
     (r"\b(meteo|temps fait|quel temps|temperature|fait (il |t il )?(chaud|froid)|va t il pleuvoir|il va pleuvoir|pleuvoir)\b",
      lambda m: _weather(m.string)),

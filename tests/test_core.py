@@ -12,6 +12,9 @@ fake.play_music = lambda q, s: f"play[{s}]:{q}"
 fake.open_url = lambda u: None
 fake.close_tab = lambda n="": f"TAB:{n}"; fake.close_window = lambda n="": "WIN"
 fake.random_game = lambda s="": f"RAND:{s}"
+fake.power_mode = lambda m: f"POWER:{m}"; fake.system = lambda a: f"SYS:{a}"
+fake.arrange_window = lambda n, p, exclude=(): f"WIN:{n}|{p}"
+fake.arrange_two = lambda a, pa, b, pb: f"TWO:{a}|{pa}|{b}|{pb}"
 fake.screenshot = lambda m="screen": f"SHOT:{m}"; fake.open_last_screenshot = lambda: "LASTSHOT"
 fake.show_images = lambda q: f"IMG:{q}"; fake.web_search = lambda q: f"WEB:{q}"
 fake.resume = lambda: "RESUME"; fake.pause_music = lambda: "PAUSE"; fake.what_is_playing = lambda: "NOWPLAYING"
@@ -88,6 +91,13 @@ CASES = {
     "ferme la fenêtre": "WIN",
     "Allez Jarvis, lance n'importe quel jeu Steam au hasard.": "RAND:steam",
     "lance un jeu au hasard": "RAND:",
+    "Non, mets-toi en veille.": "Je me mets en veille. Appelez-moi quand vous voulez.",
+    "Mets-moi en mode économie d'énergie.": "POWER:economie",
+    "mode économie d'énergie.": "POWER:economie",
+    "passe en mode performance": "POWER:performance",
+    "Allez Jarvis, mets Youtube Musique sur la partie gauche de l'écran et Youtube sur la partie droite.": "TWO:youtube music|gauche|youtube|droite",
+    "mets Discord en haut à gauche": "WIN:discord|haut a gauche",
+    "Mais là, t'as juste baissé le volume et baissé la luminosité, t'as pas mis le mode économiseur d'énergie.": "POWER:economie",
     "fais un screenshot de mon écran.": "SHOT:screen",
     "fais une capture d'écran de la fenêtre": "SHOT:window",
     "prends une capture d'une zone": "SHOT:zone",

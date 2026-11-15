@@ -843,9 +843,12 @@ def system(action: str) -> str:
     if action == "cancel_shutdown":
         subprocess.run(["shutdown", "/a"], creationflags=0x08000000)
         return "Arrêt annulé."
-    if action == "sleep":
-        subprocess.run(["rundll32.exe", "powrprof.dll,SetSuspendState", "0,1,0"])
-        return "Mise en veille."
+    if action == "sleep":  # VRAIE veille (rundll32 SetSuspendState part en veille prolongée si elle est activée)
+        subprocess.Popen(["powershell", "-NoProfile", "-Command",
+                          "Add-Type -AssemblyName System.Windows.Forms; Start-Sleep 2; "
+                          "[System.Windows.Forms.Application]::SetSuspendState('Suspend', $false, $false)"],
+                         creationflags=0x08000000)
+        return "Mise en veille de l'ordinateur."
     return "Action système inconnue."
 
 
@@ -920,14 +923,112 @@ def open_website(url: str) -> str:
     return f"{url} ouvert."
 
 
-def type_text(text: str) -> str:
-    """Tape du texte dans la fenêtre active (presse-papiers + Ctrl+V)."""
+def type_text(text: str, submit: bool = False) -> str:
+    """Tape du texte dans la fenêtre active (presse-papiers + Ctrl+V), puis Entrée si submit."""
+    if text.strip() == "" and "\n" in text:
+        _press(0x0D); return "Entrée."
     subprocess.run(["powershell", "-NoProfile", "-Command", "Set-Clipboard -Value $input"],
                    input=text, text=True, creationflags=0x08000000)
     time.sleep(0.15)
     user32.keybd_event(0x11, 0, 0, 0); user32.keybd_event(0x56, 0, 0, 0)
     user32.keybd_event(0x56, 0, 2, 0); user32.keybd_event(0x11, 0, 2, 0)
+    if submit:
+        time.sleep(0.2); _press(0x0D)
+        return "Texte tapé et validé."
     return "Texte tapé."
+
+
+# ---------- Modes d'alimentation ----------
+POWER_MODES = {"economie": ("961cc777-2547-4f9d-8174-7d86181b8a7a", "Mode économie d'énergie activé."),
+               "equilibre": ("00000000-0000-0000-0000-000000000000", "Mode équilibré activé."),
+               "performance": ("ded574b5-45a0-4f42-8737-46345c09c238", "Mode performances maximales activé.")}
+
+
+def power_mode(mode: str) -> str:
+    """Mode d'alimentation Windows (le curseur « Mode de gestion de l'alimentation »)."""
+    import unicodedata
+    m = "".join(c for c in unicodedata.normalize("NFD", mode.lower()) if unicodedata.category(c) != "Mn")
+    key = "economie" if any(k in m for k in ("eco", "batterie", "energie")) else \
+          "performance" if any(k in m for k in ("perf", "max", "jeu", "puissan")) else "equilibre"
+    guid, msg = POWER_MODES[key]
+    r = subprocess.run(["powercfg", "/overlaysetactive", guid], capture_output=True, text=True, creationflags=0x08000000)
+    if r.returncode != 0:
+        os.startfile("ms-settings:powersleep")
+        return "Je n'ai pas pu changer le mode directement ; j'ai ouvert les réglages d'alimentation."
+    return msg
+
+
+# ---------- Disposition des fenêtres ----------
+def _find_window(name: str, exclude=()):
+    import unicodedata
+    def n(t):
+        return "".join(c for c in unicodedata.normalize("NFD", t.lower()) if unicodedata.category(c) != "Mn")
+    want = n(name).split()
+    best, best_s = None, 0.0
+    for w in _windows():
+        if w[0] in exclude or not w[2]:
+            continue
+        hay = n(w[2] + " " + w[1].removesuffix(".exe"))
+        hit = sum(1 for x in want if x in hay.split() or x in hay)
+        if not hit:
+            continue
+        sc = hit / len(want) - 0.02 * len(n(w[2]).split())  # titre court = plus probable (« YouTube » ≠ « YouTube Music »)
+        if sc > best_s:
+            best, best_s = w, sc
+    return best if best_s >= 0.5 else None
+
+
+ZONES = {"gauche": (0, 0, .5, 1), "droite": (.5, 0, .5, 1), "haut": (0, 0, 1, .5), "bas": (0, .5, 1, .5),
+         "haut gauche": (0, 0, .5, .5), "haut droite": (.5, 0, .5, .5), "bas gauche": (0, .5, .5, .5),
+         "bas droite": (.5, .5, .5, .5)}
+
+
+def arrange_window(name: str, position: str, exclude=()) -> str:
+    """Place une fenêtre : gauche, droite, haut gauche…, plein écran, réduire, autre écran."""
+    from ctypes import wintypes
+    import unicodedata
+    pos = "".join(c for c in unicodedata.normalize("NFD", position.lower()) if unicodedata.category(c) != "Mn")
+    pos = " ".join(w for w in pos.replace("-", " ").split() if w in ("haut", "bas", "gauche", "droite")) or pos
+    w = _find_window(name, exclude) if name else next(((h, "", "") for h in [user32.GetForegroundWindow()]), None)
+    if not w:
+        return f"Je ne trouve pas de fenêtre « {name} »."
+    hwnd = w[0]
+    if any(k in pos for k in ("plein", "agrandi", "maxim", "grand")):
+        user32.ShowWindow(hwnd, 3); return f"{name or 'Fenêtre'} en plein écran."
+    if any(k in pos for k in ("redui", "cache", "minim")):
+        user32.ShowWindow(hwnd, 6); return f"{name or 'Fenêtre'} réduite."
+    user32.ShowWindow(hwnd, 9)  # restaure si agrandie
+    class MI(ctypes.Structure):
+        _fields_ = [("cbSize", wintypes.DWORD), ("rcMonitor", wintypes.RECT), ("rcWork", wintypes.RECT),
+                    ("dwFlags", wintypes.DWORD)]
+    mon = user32.MonitorFromWindow(hwnd, 2)
+    if "autre" in pos or "ecran" in pos and "deux" in pos:
+        mons = []
+        cb = ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_double)(
+            lambda h, *_: mons.append(h) or 1)
+        user32.EnumDisplayMonitors(None, None, cb, 0)
+        if len(mons) > 1:
+            mon = next(m for m in mons if m != mon)
+        pos = "plein"
+    mi = MI(); mi.cbSize = ctypes.sizeof(MI)
+    user32.GetMonitorInfoW(ctypes.c_void_p(mon), ctypes.byref(mi))
+    r = mi.rcWork
+    x, y, ww, hh = ZONES.get(pos, (0, 0, 1, 1))
+    W, H = r.right - r.left, r.bottom - r.top
+    user32.SetWindowPos(hwnd, 0, int(r.left + x * W), int(r.top + y * H), int(ww * W), int(hh * H), 0x0040)
+    if pos == "plein":
+        user32.ShowWindow(hwnd, 3)
+    _force_front(hwnd)
+    return f"{name or 'Fenêtre'} placée {('à ' + pos) if pos in ZONES else ''}".strip() + "."
+
+
+def arrange_two(a: str, pa: str, b: str, pb: str) -> str:
+    # le nom le plus précis d'abord (« YouTube Music » avant « YouTube »), puis on l'exclut pour le second
+    pairs = sorted([(a, pa), (b, pb)], key=lambda t: -len(t[0]))
+    w1 = _find_window(pairs[0][0])
+    r1 = arrange_window(pairs[0][0], pairs[0][1])
+    r2 = arrange_window(pairs[1][0], pairs[1][1], exclude=(w1[0],) if w1 else ())
+    return f"{r1} {r2}"
 
 
 _timers = []
@@ -944,7 +1045,8 @@ def set_timer(seconds: int, label: str, speak) -> str:
 
 
 # Actions qui demandent une confirmation vocale
-SENSITIVE = {("system", "shutdown"), ("system", "restart"), ("organize_downloads", None),
-             ("close_app", None), ("type_text", None), ("open_website", None), ("open_path", None)}
+SENSITIVE = {("system", "shutdown"), ("system", "restart"), ("system", "sleep"), ("organize_downloads", None),
+             ("close_app", None), ("open_website", None), ("open_path", None)}
+# type_text : confirmé seulement pour un long texte (voir brain), un code ou un mot court se tape directement
 # outils qui lisent du contenu extérieur (web, écran) : après eux, plus d'action automatique dans le même tour
 READERS = {"ask_web", "look_at_screen"}
