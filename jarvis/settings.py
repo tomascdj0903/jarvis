@@ -133,7 +133,14 @@ class Wizard:
                          highlightthickness=1, highlightbackground="#12324A", highlightcolor=CYAN, show="•")
             e.insert(0, cfg.get(k, "")); e.pack(side="left", fill="x", expand=True, ipady=4)
             self._btn(r, "Obtenir", (lambda u=link: webbrowser.open(u)), GOLD).pack(side="left", padx=(6, 0))
+            if k == "gemini_api_key":
+                self._btn(r, "Tester", self.test_gemini).pack(side="left", padx=(6, 0))
             self.extra[k] = e
+        tk.Label(f, text="Gemini : clé « AIza… » ou nouvelle clé « AQ.… » ; plusieurs clés possibles, séparées par une virgule",
+                 fg=GREY, bg=BG, font=("Segoe UI", 8), anchor="w").pack(fill="x")
+        self.gem_status = tk.Label(f, text="", fg=GREY, bg=BG, font=("Segoe UI", 9), anchor="w", justify="left",
+                                   wraplength=520)
+        self.gem_status.pack(fill="x")
 
         label("1 quater · PLANNING PARTAGÉ — clé du raccourci iPhone (RAPPELS_SECRET)")
         prow0 = tk.Frame(f, bg=BG); prow0.pack(fill="x")
@@ -389,6 +396,18 @@ class Wizard:
             except Exception as e:
                 ok, msg = False, f"✗ {e.__class__.__name__}"
             self.w.after(0, lambda: self.key_status.config(text=msg, fg=GREEN if ok else RED))
+        threading.Thread(target=run, daemon=True).start()
+
+    def test_gemini(self):
+        self.gem_status.config(text="Test Gemini en cours…", fg=GREY)
+        raw = self.extra["gemini_api_key"].get()
+        def run():
+            from . import gemini
+            try:
+                ok, msg = gemini.check(raw)
+            except Exception as e:
+                ok, msg = False, f"✗ {e}"
+            self.w.after(0, lambda: self.gem_status.config(text=msg, fg=GREEN if ok else RED))
         threading.Thread(target=run, daemon=True).start()
 
     # ---- diagnostic ----

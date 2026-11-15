@@ -455,7 +455,7 @@ def selftest() -> int:
     step("moteurs ONNX (accélération)", lambda: ", ".join(__import__("jarvis.stt_local", fromlist=["x"]).providers()))
     step("dossiers Windows réels", lambda: config.known_folder("Documents"))
     step("contrôle média Windows (winrt)", lambda: f"{len(__import__('jarvis.media', fromlist=['sessions']).sessions())} session(s)")
-    step("modules", lambda: [__import__(f"jarvis.{m}") for m in ("actions", "brain", "router", "settings", "updater", "hud", "voice", "util", "media", "vision", "weather", "macros", "assistant", "stt_local")] and "ok")
+    step("modules", lambda: [__import__(f"jarvis.{m}") for m in ("actions", "brain", "router", "settings", "updater", "hud", "voice", "util", "media", "vision", "gemini", "weather", "macros", "assistant", "stt_local")] and "ok")
     step("routeur", lambda: __import__("jarvis.router", fromlist=["route"]).route("raconte une blague") is None or 1/0)
     offline = "--offline" in sys.argv
     try:  # test réseau réel (informatif, ne bloque pas la publication)

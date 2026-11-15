@@ -160,6 +160,8 @@ class Voice:
     # ---------- parole ----------
     def speak(self, text: str):
         import edge_tts
+        from .util import speakable
+        text = speakable(text) or text
         self.speaking.set()
         self.on_state("speaking")
         try:

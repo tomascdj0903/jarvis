@@ -28,25 +28,26 @@ def _ask_image(cfg, prompt, b64, max_tokens=300):
     """Envoie image + question : Groq si un modèle de vision existe, sinon Gemini (clé de secours)."""
     msg = [{"role": "user", "content": [{"type": "text", "text": prompt},
                                         {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}]}]
-    tries = []
+    errors = []
     gk = (cfg.get("groq_api_key") or "").strip()
     gm = _model(gk) if gk else None
     if gm:
-        tries.append(("https://api.groq.com/openai/v1/chat/completions", gk, gm))
-    ge = (cfg.get("gemini_api_key") or "").strip()
-    if ge:
-        for m in ("gemini-2.5-flash", "gemini-2.0-flash", "gemini-flash-latest"):
-            tries.append(("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", ge, m))
-    if not tries:
-        raise RuntimeError("aucun modèle de vision disponible : ajoutez une clé Gemini (gratuite) dans les Réglages")
-    last = None
-    for url, key, model in tries:
-        r = requests.post(url, timeout=40, headers={"Authorization": f"Bearer {key}"},
-                          json={"model": model, "max_tokens": max_tokens, "temperature": 0, "messages": msg})
+        r = requests.post("https://api.groq.com/openai/v1/chat/completions", timeout=40,
+                          headers={"Authorization": f"Bearer {gk}"},
+                          json={"model": gm, "max_tokens": max_tokens, "temperature": 0, "messages": msg})
         if r.ok:
             return r.json()["choices"][0]["message"]["content"].strip()
-        last = f"{r.status_code}"
-    raise RuntimeError(f"analyse d'image refusée ({last})")
+        errors.append(f"Groq {r.status_code}")
+    ge = (cfg.get("gemini_api_key") or "").strip()
+    if ge:
+        from . import gemini
+        try:
+            return gemini.chat(ge, msg, temperature=0, max_tokens=max_tokens, timeout=40)["content"]
+        except Exception as e:
+            errors.append(f"Gemini {e}")
+    if not errors:
+        raise RuntimeError("aucun modèle de vision disponible : ajoutez une clé Gemini (gratuite) dans les Réglages")
+    raise RuntimeError("analyse d'image refusée (" + " ; ".join(errors) + ")")
 
 
 def capture_jpeg(max_w=1280, size_out=None) -> bytes:
@@ -79,8 +80,8 @@ def locate(target: str, cfg):
         txt = _ask_image(cfg, "Trouve l'élément cliquable suivant sur cette capture d'écran : « " + target +
                          " ». Réponds UNIQUEMENT en JSON : {\"found\": true/false, \"x\": 0-1000, \"y\": 0-1000} où x et y "
                          "sont le centre de l'élément en millièmes de la largeur/hauteur.", b64, 80)
-    except Exception:
-        return None
+    except Exception as e:
+        return str(e)
     m = re.search(r"\{.*\}", txt, re.S)
     if not m:
         return None
@@ -98,6 +99,8 @@ def click_on(target: str, cfg, confirm) -> str:
     import ctypes
     import time
     pos = locate(target, cfg)
+    if isinstance(pos, str):
+        return f"Je n'arrive pas à analyser l'écran : {pos}."
     if not pos:
         return f"Je ne trouve pas « {target} » à l'écran."
     u = ctypes.windll.user32

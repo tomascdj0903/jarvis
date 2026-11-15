@@ -56,3 +56,24 @@ def session_locked() -> bool:
     return not ok
 
 
+
+
+def speakable(text: str) -> str:
+    """Texte à lire à voix haute : sans ponctuation « parlée » ni chemins/liens complets."""
+    import re
+    t = str(text)
+    # lien -> nom du site (« youtube »), chemin Windows -> nom du fichier sans extension
+    t = re.sub(r"https?://(?:www\.|m\.)?([\w-]+)(?:\.[\w-]+)*\S*?(?=[.,;!?]?(?:\s|$))", lambda m: m.group(1), t)
+    t = re.sub(r"\b[A-Za-z]:\\(?:[^\\\n]*\\)*([^\\\n.]+?)(?:\.\w{1,5})?(?=[\s.,;!?]|$)", lambda m: m.group(1), t)
+    t = re.sub(r"(?<=\w)[\u2010\u2011\u2012](?=\w)", "-", t)      # puis‑je -> puis-je
+    t = re.sub(r"\s[\u2013\u2014-]{1,2}\s", ", ", t)                 # tirets de phrase -> pause
+    t = t.replace("…", ".").replace("...", ".").replace("°C", " degrés").replace("°", " degrés")
+    t = re.sub(r"[«»\"“”„*#_`~|\\\[\]{}<>^=]", " ", t)
+    t = re.sub(r"\s*[()]\s*", ", ", t)
+    t = re.sub(r"(?<=[a-zà-ÿ])/(?=[a-zà-ÿ])", " ou ", t)
+    t = re.sub(r"[\U0001F000-\U0001FAFF\u2600-\u27BF\uFE0F]", "", t)  # émojis
+    t = re.sub(r"([.!?])(?=[A-ZÀ-Ý])", r"\1 ", t)                        # « Maître.Comment »
+    t = re.sub(r"\s+([,.])", r"\1", t)
+    t = re.sub(r"([,;:])\1+|,\s*([.!?])", lambda m: m.group(1) or m.group(2), t)
+    t = re.sub(r"^[\s,;:]+", "", re.sub(r"\s{2,}", " ", t))
+    return t.strip()

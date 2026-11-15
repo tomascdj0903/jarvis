@@ -3,7 +3,12 @@ Pour changer de fournisseur, il suffit de modifier API_URL / le modèle."""
 import datetime
 import json
 
+import logging
+from pathlib import Path
+
 import requests
+
+log = logging.getLogger("jarvis")
 
 from . import actions, assistant, vision, weather  # imports statiques : embarqués dans le .exe
 
@@ -21,9 +26,7 @@ class GroqError(Exception):
 # Fournisseurs compatibles OpenAI, essayés dans l'ordre si le précédent échoue (quota, panne, réseau)
 PROVIDERS = [
     {"name": "Groq", "key": "groq_api_key", "url": API_URL, "model_cfg": "llm_model"},
-    {"name": "Gemini", "key": "gemini_api_key",
-     "url": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
-     "models": ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-flash-latest"]},
+    {"name": "Gemini", "key": "gemini_api_key", "native": True},  # API native : clés AIza… et AQ.…
     {"name": "OpenRouter", "key": "openrouter_api_key", "url": "https://openrouter.ai/api/v1/chat/completions",
      "models": ["meta-llama/llama-3.3-70b-instruct:free", "openrouter/auto"]},
 ]
@@ -42,6 +45,7 @@ TOOLS = [
           {"name": S}, ["name"]),
     _tool("close_app", "Ferme une application par son nom de processus (ex: spotify, discord, chrome).",
           {"name": S}, ["name"]),
+    _tool("random_game", "Lance un jeu installé choisi au hasard (store : steam, epic ou vide = tous).", {"store": S}),
     _tool("list_apps", "Liste les applications installées contenant un mot.", {"query": S}),
     _tool("media", "Contrôle la musique/vidéo en cours (Spotify, YouTube...).",
           {"action": {"type": "string", "enum": ["next", "previous", "play_pause", "stop"]}}, ["action"]),
@@ -160,6 +164,9 @@ class Brain:
         raise GroqError(" | ".join(errors) or "aucune clé d'IA configurée")
 
     def _call_other(self, prov, key, messages, tools):
+        if prov.get("native"):
+            from . import gemini
+            return gemini.chat(key, messages, TOOLS if tools else None)
         body = {"messages": messages, "temperature": 0.4, "max_tokens": 250}
         if tools:
             body.update(tools=TOOLS, tool_choice="auto")
@@ -199,9 +206,14 @@ class Brain:
 
     def _run_tool(self, name, args):
         a = actions
-        if (name, args.get("action")) in a.SENSITIVE or (name, None) in a.SENSITIVE:
+        sensitive = (name, args.get("action")) in a.SENSITIVE or (name, None) in a.SENSITIVE
+        if name == "open_path" and a.is_shortcut(args.get("path", "")):
+            sensitive = False  # raccourci du menu Démarrer / du Bureau : c'est juste lancer une appli
+        if sensitive:
+            import re
+            site = re.sub(r"^(?:https?://)?(?:www\.)?([^/]+).*$", r"\1", args.get("url", ""))
             what = {"close_app": f"fermer {args.get('name', '')}", "type_text": "taper le texte demandé",
-                    "open_website": f"ouvrir {args.get('url', '')}", "open_path": f"ouvrir {args.get('path', '')}",
+                    "open_website": f"ouvrir {site}", "open_path": f"ouvrir {Path(args.get('path', '')).stem}",
                     "organize_downloads": "ranger vos téléchargements"}.get(name, f"{name} {args.get('action', '')}")
             if not self.confirm(self._t("confirm").format(what=what)):
                 return "Action annulée par l'utilisateur."
@@ -209,6 +221,7 @@ class Brain:
         table = {
             "open_app": lambda: a.open_app(args["name"]),
             "close_app": lambda: a.close_app(args["name"]),
+            "random_game": lambda: a.random_game(args.get("store", "")),
             "list_apps": lambda: a.list_apps(args.get("query", "")),
             "media": lambda: a.media(args["action"]),
             "volume": lambda: a.volume(args["action"], args.get("steps", 5)),
@@ -268,6 +281,7 @@ class Brain:
                     result = "Refusé : action bloquée après lecture d'un contenu extérieur."
                 else:
                     result = self._run_tool(name, args)
+                log.info("outil %s %s -> %s", name, json.dumps(args, ensure_ascii=False)[:120], str(result)[:120])
                 if name in actions.READERS:
                     tainted = True
                     last = result
@@ -277,7 +291,8 @@ class Brain:
                     if name in ("ask_web", "look_at_screen") and len(calls) == 1:
                         self.history.append({"role": "assistant", "content": last})
                         return last  # réponse directe : pas de 2e appel (moins de tokens, pas de « C'est fait »)
-                done_list.append(result if name not in actions.READERS else "")
+                done_list.append(result if name not in actions.READERS and name != "list_apps" else "")
                 results_summary = " ".join(x.strip() for x in done_list if x)
                 messages.append({"role": "tool", "tool_call_id": c["id"], "content": result})
-        return last or " ".join(x for x in done_list if x) or "Je n'ai rien pu faire pour cette demande."
+        done = [x for x in done_list if x]
+        return last or (done[-1][:200] if done else "Je n'ai rien pu faire pour cette demande.")

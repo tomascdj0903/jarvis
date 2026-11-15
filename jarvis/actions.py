@@ -129,6 +129,7 @@ def set_brightness(percent: int) -> str:
 
 # ---------- Applications ----------
 _APPS: dict[str, str] = {}
+_ALTS: dict[str, list] = {}   # nom -> toutes les cibles trouvées (raccourci, appli Store…), essayées dans l'ordre
 
 
 def scan_apps() -> dict:
@@ -139,13 +140,14 @@ def scan_apps() -> dict:
         Path.home() / "Desktop",
         Path(os.environ.get("PUBLIC", r"C:\Users\Public")) / "Desktop",
     ]
-    apps = {}
+    apps, alts = {}, {}
     for root in roots:
         if root.exists():
             for p in root.rglob("*"):
                 if p.suffix.lower() in (".lnk", ".url") and "uninstall" not in p.stem.lower() \
                         and "désinstaller" not in p.stem.lower():
                     apps.setdefault(p.stem.lower(), str(p))
+                    alts.setdefault(p.stem.lower(), []).append(str(p))
     # Jeux Steam
     for steam in (Path(r"C:\Program Files (x86)\Steam\steamapps"), Path(r"C:\Program Files\Steam\steamapps")):
         if steam.exists():
@@ -177,11 +179,15 @@ def scan_apps() -> dict:
         for line in r.stdout.splitlines():
             if "|" in line and "!" in line:  # AppID des applis Store
                 nm, aid = line.rsplit("|", 1)
-                apps.setdefault(nm.strip().lower(), f"shell:AppsFolder\\{aid.strip()}")
+                k, tgt = nm.strip().lower(), f"shell:AppsFolder\\{aid.strip()}"
+                apps[k] = tgt                         # l'appli Store enregistrée passe avant un vieux raccourci
+                alts.setdefault(k, []).insert(0, tgt)
     except Exception:
         pass
     _APPS.clear()
     _APPS.update(apps)
+    _ALTS.clear()
+    _ALTS.update(alts)
     return apps
 
 
@@ -282,13 +288,31 @@ def _launch(target: str):
         os.startfile(target)
 
 
+def _launch_app(key: str, target: str):
+    """Lance l'appli ; si la cible est cassée (raccourci d'une ancienne version), essaie les autres."""
+    last = None
+    for t in [target] + [x for x in _ALTS.get(key, []) if x != target]:
+        try:
+            _launch(t)
+            return
+        except OSError as e:
+            last = e
+    raise last
+
+
 def open_app(name: str) -> str:
     import webbrowser
     n = name.lower().strip().removesuffix(".").strip()
+    if n.count(",") >= 2:
+        return "Donnez-moi une seule application à ouvrir."
     if not _APPS:
         scan_apps()
     if n in _APPS:                       # 1. appli installée, nom exact
-        _launch(_APPS[n]); bring_to_front(exes=(), title_hint=n.split()[0], delay=2.0, tries=10)
+        try:
+            _launch_app(n, _APPS[n])
+        except OSError:
+            return f"Impossible de lancer {n} : son raccourci semble cassé, réinstallez l'application."
+        bring_to_front(exes=(), title_hint=n.split()[0], delay=2.0, tries=10)
         return f"{n} lancé."
     import re
     m = re.search(r"^(.+?) (?:sur|avec|dans|via) (youtube music|yt music|youtube|spotify|deezer)$", n)
@@ -302,7 +326,10 @@ def open_app(name: str) -> str:
     if not target:
         # 4. fenêtre déjà ouverte (onglet actif, document…), 5. favori du navigateur
         return switch_window(n) or open_bookmark(n) or f"Application « {name} » introuvable."
-    _launch(target)
+    try:
+        _launch_app(key, target)
+    except OSError:
+        return f"Impossible de lancer {key} : son raccourci semble cassé, réinstallez l'application."
     if not str(target).startswith(("steam://", "com.epicgames")):
         bring_to_front(exes=(), title_hint=key.split()[0], delay=2.0, tries=10)
     return f"{key} lancé."
@@ -346,8 +373,37 @@ def close_app(name: str) -> str:
 def list_apps(query: str = "") -> str:
     if not _APPS:
         scan_apps()
-    names = sorted(k for k in _APPS if query.lower() in k)[:40]
-    return ", ".join(names) or "Aucune application trouvée."
+    q = query.lower().strip()
+    if q in ("jeu", "jeux", "game", "games", "steam", "epic"):
+        names = [k for k, _ in games("" if q in ("jeu", "jeux", "game", "games") else q)]
+    else:
+        names = sorted(k for k in _APPS if q in k)
+    total = len(names)
+    names = names[:25]
+    return (", ".join(names) + (f" (et {total - 25} autres)" if total > 25 else "")) or "Aucune application trouvée."
+
+
+NOT_GAMES = ("redistributable", "steamworks", "soundtrack", "dedicated server", "sdk", "benchmark", "editor",
+             "wallpaper engine", "proton", "steam linux runtime", "tool", "demo", "server")
+
+
+def games(store: str = "") -> list:
+    """Jeux installés (Steam, Epic) : [(nom, cible)]."""
+    if not _APPS:
+        scan_apps()
+    pref = {"steam": ("steam://",), "epic": ("com.epicgames",)}.get(store, ("steam://", "com.epicgames"))
+    return sorted((k, v) for k, v in _APPS.items()
+                  if str(v).startswith(pref) and not any(x in k for x in NOT_GAMES))
+
+
+def random_game(store: str = "") -> str:
+    import random
+    g = games(store)
+    if not g:
+        return "Je ne trouve aucun jeu installé" + (f" sur {store.title()}." if store else ".")
+    name, target = random.choice(g)
+    _launch(target)
+    return f"Au hasard : je lance {name}."
 
 
 # ---------- Musique (sans API ni compte) ----------
@@ -634,14 +690,26 @@ def find_files(query: str, cfg) -> str:
     return "\n".join(_search(query, cfg)) or "Aucun fichier trouvé."
 
 
+def is_shortcut(path: str) -> bool:
+    """Raccourci d'appli (.lnk/.url) du menu Démarrer ou du Bureau."""
+    p = str(path).lower()
+    return p.endswith((".lnk", ".url")) and any(k in p for k in ("\\start menu\\", "\\menu démarrer\\", "\\desktop\\"))
+
+
 def open_path(path: str, cfg) -> str:
     p = Path(os.path.expandvars(os.path.expanduser(path)))
     if not p.exists():
         return "Ce chemin n'existe pas."
+    if is_shortcut(str(p)):
+        try:
+            os.startfile(str(p))
+        except OSError:
+            return open_app(p.stem)  # raccourci cassé : on passe par l'appli installée (Store…)
+        return f"{p.stem} lancé."
     if not _allowed(p, cfg):
         return "Ce dossier n'est pas dans les dossiers autorisés."
     os.startfile(str(p))
-    return f"{p.name} ouvert."
+    return f"{p.stem} ouvert."
 
 
 def open_folder(name: str, cfg=None) -> str:

@@ -89,6 +89,11 @@ def _new_chat(m):
 RULES = [
     (r"\b(affiche|montre|cherche|trouve|ouvre|mets)( moi)? (une |des |la |les )?(photos?|images?|portraits?) (de |d'|du |des )(?P<q>.+?)( sur (google|internet|le web|le navigateur))?$",
      lambda m: actions.show_images(m.group("q"))),
+    (r"\b(lance|joue|ouvre|mets)( moi)?( a)? (un|n'importe quel|n importe quel) (jeu|game)( (sur |de )?(?P<s>steam|epic( games)?))?.*(hasard|n'importe|importe lequel|aleatoire)?",
+     lambda m: actions.random_game((m.group("s") or "").split()[0] if m.group("s") else "")
+     if re.search(r"hasard|importe|aleatoire|quelconque", m.string) else None),
+    (r"^(ouvre|affiche|montre)( moi)? (mon |l')?historique( de visionnage)?( (youtube|de youtube|sur youtube))?$",
+     lambda m: actions.open_url("https://www.youtube.com/feed/history") or "Historique YouTube ouvert."),
     (r"^ferme( moi)? (l'onglet|cet onglet|l'onglet actif|la page|cette page)$", lambda m: actions.close_tab()),
     (r"^ferme( moi)? (l'onglet|la page) (de |d'|du |des |sur )?(?P<n>.+)$", lambda m: actions.close_tab(m.group("n"))),
     (r"^ferme( moi)? (la fenetre|cette fenetre)$", lambda m: actions.close_window()),

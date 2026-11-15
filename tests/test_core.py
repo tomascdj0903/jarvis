@@ -11,6 +11,7 @@ fake.open_app = lambda n: f"open:{n}" if n in KNOWN else f"Application « {n} »
 fake.play_music = lambda q, s: f"play[{s}]:{q}"
 fake.open_url = lambda u: None
 fake.close_tab = lambda n="": f"TAB:{n}"; fake.close_window = lambda n="": "WIN"
+fake.random_game = lambda s="": f"RAND:{s}"
 fake.show_images = lambda q: f"IMG:{q}"; fake.web_search = lambda q: f"WEB:{q}"
 fake.resume = lambda: "RESUME"; fake.pause_music = lambda: "PAUSE"; fake.what_is_playing = lambda: "NOWPLAYING"
 fake.WEB_APPS = {"youtube music": "", "youtube": "", "deezer": "", "netflix": ""}
@@ -84,6 +85,9 @@ CASES = {
     "ferme l'onglet.": "TAB:",
     "ferme la page de Christophe Colomb.": "TAB:christophe colomb",
     "ferme la fenêtre": "WIN",
+    "Allez Jarvis, lance n'importe quel jeu Steam au hasard.": "RAND:steam",
+    "lance un jeu au hasard": "RAND:",
+    "ouvre mon historique YouTube": "Historique YouTube ouvert.",
     "ouvre Google et cherche la météo marine": "WEB:la meteo marine",
     "cherche recette de crêpes sur Google": "WEB:recette de crepes",
     # IA / pas de la musique
@@ -216,10 +220,13 @@ def test_phase2():
 
     class R:
         def __init__(self, code, msg=None): self.status_code = code; self.ok = code == 200; self.text = "x"; self.headers = {}; self.m = msg
-        def json(self): return {"choices": [{"message": self.m}]} if self.m else {"error": {"message": "quota"}}
+        def json(self):
+            if self.m and self.m == "G":
+                return {"candidates": [{"content": {"parts": [{"text": "Réponse de secours."}]}}]}
+            return {"choices": [{"message": self.m}]} if self.m else {"error": {"message": "quota"}}
     def post(url, **k):
         calls.append(url)
-        return R(429) if "groq" in url else R(200, {"content": "Réponse de secours."})
+        return R(429) if "groq" in url else R(200, "G")
     brain.requests.post = post
     import time as _t; old = _t.sleep; _t.sleep = lambda s: None
     try:
@@ -258,6 +265,69 @@ def test_phase3():
         assert route(ph) == "DEVOIRS", ph
     assert route("ouvre planning partagé") == "open:planning partage"
     assert route("Écris Bonjour à tous, j'arrive.") == "TYPE:Bonjour à tous, j'arrive."
+
+
+def test_gemini_native():
+    import jarvis.gemini as G
+    sent = []
+
+    class R:
+        def __init__(self, code, data=None, text=""): self.status_code = code; self.ok = code == 200; self.d = data; self.text = text
+        def json(self): return self.d
+    def get(url, headers=None, **k):
+        assert headers["x-goog-api-key"].startswith("AQ."), headers
+        return R(200, {"models": [{"name": "models/gemini-2.5-flash", "supportedGenerationMethods": ["generateContent"]},
+                                  {"name": "models/gemini-3-flash-preview", "supportedGenerationMethods": ["generateContent"]},
+                                  {"name": "models/gemini-3.1-flash-lite", "supportedGenerationMethods": ["generateContent"]},
+                                  {"name": "models/gemini-2.5-flash-preview-tts", "supportedGenerationMethods": ["generateContent"]}]})
+    def post(url, headers=None, json=None, **k):
+        assert "Authorization" not in headers and headers["x-goog-api-key"] == "AQ.test"
+        sent.append((url, json))
+        if "3.1-flash-lite" in url:
+            return R(429, text='{"error": {"message": "quota GenerateRequestsPerDayPerProjectPerModel"}}')
+        if len(sent) == 2:
+            return R(200, {"candidates": [{"content": {"parts": [
+                {"functionCall": {"name": "open_app", "args": {"name": "discord"}}, "thoughtSignature": "SIG"}]}}]})
+        return R(200, {"candidates": [{"content": {"parts": [{"text": "pensée", "thought": True}, {"text": "C'est ouvert."}]}}]})
+    G.requests.get, G.requests.post = get, post
+    G._chains.clear(); G._dead.clear()
+    chain = G.models("AQ.test")
+    assert chain[0] == "gemini-3.1-flash-lite" and "gemini-2.5-flash-preview-tts" not in chain, chain
+    tools = [{"type": "function", "function": {"name": "open_app", "description": "x",
+              "parameters": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}}},
+             {"type": "function", "function": {"name": "battery", "description": "y", "parameters": {"type": "object", "properties": {}}}}]
+    msgs = [{"role": "system", "content": "Tu es Jarvis."}, {"role": "user", "content": "ouvre discord"}]
+    m = G.chat("AQ.test", msgs, tools)
+    assert "3.1-flash-lite" in sent[0][0] and "gemini-2.5-flash:" in sent[1][0]  # quota du jour -> modèle suivant
+    assert m["tool_calls"][0]["function"]["name"] == "open_app"
+    body = sent[1][1]
+    assert body["systemInstruction"]["parts"][0]["text"] == "Tu es Jarvis."
+    decl = body["tools"][0]["functionDeclarations"]
+    assert "parameters" in decl[0] and "parameters" not in decl[1]
+    cid = m["tool_calls"][0]["id"]
+    msgs += [{"role": "assistant", "content": "", "tool_calls": m["tool_calls"]},
+             {"role": "tool", "tool_call_id": cid, "content": "Discord ouvert."}]
+    m2 = G.chat("AQ.test", msgs, tools)
+    assert m2["content"] == "C'est ouvert." and "tool_calls" not in m2
+    parts = sent[-1][1]["contents"]
+    assert parts[1]["role"] == "model" and parts[1]["parts"][0]["thoughtSignature"] == "SIG"
+    assert parts[2]["parts"][0]["functionResponse"]["name"] == "open_app"
+    img = G._contents([{"role": "user", "content": [{"type": "text", "text": "quoi ?"},
+                       {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,QUJD"}}]}])[1]
+    assert img[0]["parts"][1] == {"inline_data": {"mime_type": "image/jpeg", "data": "QUJD"}}
+    assert G.keys("AQ.a, AIzaB ;AQ.c") == ["AQ.a", "AIzaB", "AQ.c"]
+    assert not G.check("sk-123")[0]
+    print("gemini natif OK")
+
+
+def test_speakable():
+    from jarvis.util import speakable as sp
+    assert sp("À votre service, Maître.Comment puis‑je vous aider ?") == "À votre service, Maître. Comment puis-je vous aider ?"
+    assert sp(r"Je dois ouvrir C:\Users\33622\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\WhatsApp\WhatsApp.lnk. Vous confirmez ?") \
+        == "Je dois ouvrir WhatsApp. Vous confirmez ?", sp(r"C:\a\WhatsApp.lnk")
+    assert sp("Je dois ouvrir https://www.youtube.com/feed/history. Vous confirmez ?") == "Je dois ouvrir youtube. Vous confirmez ?"
+    assert sp("Je lance « un nouveau chat » — **ok** (test)…") == "Je lance un nouveau chat, ok, test.", sp("Je lance « un nouveau chat » — **ok** (test)…")
+    assert sp("Il fait 13°C 🙂") == "Il fait 13 degrésC" or "degrés" in sp("Il fait 13°C")
 
 
 if __name__ == "__main__":
@@ -354,10 +424,13 @@ def test_phase2():
 
     class R:
         def __init__(self, code, msg=None): self.status_code = code; self.ok = code == 200; self.text = "x"; self.headers = {}; self.m = msg
-        def json(self): return {"choices": [{"message": self.m}]} if self.m else {"error": {"message": "quota"}}
+        def json(self):
+            if self.m and self.m == "G":
+                return {"candidates": [{"content": {"parts": [{"text": "Réponse de secours."}]}}]}
+            return {"choices": [{"message": self.m}]} if self.m else {"error": {"message": "quota"}}
     def post(url, **k):
         calls.append(url)
-        return R(429) if "groq" in url else R(200, {"content": "Réponse de secours."})
+        return R(429) if "groq" in url else R(200, "G")
     brain.requests.post = post
     import time as _t; old = _t.sleep; _t.sleep = lambda s: None
     try:
@@ -399,5 +472,5 @@ def test_phase3():
 
 
 if __name__ == "__main__":
-    test_router(); test_weather_routing(); test_exe_machine(); test_versions(); test_brain_tool_loop(); test_open_app_real(); test_search_and_correct(); test_phase1(); test_injection_guard(); test_phase2(); test_phase3()
+    test_router(); test_weather_routing(); test_exe_machine(); test_versions(); test_brain_tool_loop(); test_open_app_real(); test_search_and_correct(); test_phase1(); test_injection_guard(); test_phase2(); test_phase3(); test_gemini_native(); test_speakable()
     print(f"TOUS LES TESTS OK ({len(CASES)} phrases)")
