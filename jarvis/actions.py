@@ -434,8 +434,31 @@ def games(store: str = "") -> list:
     if not _APPS:
         scan_apps()
     pref = {"steam": ("steam://",), "epic": ("com.epicgames",)}.get(store, ("steam://", "com.epicgames"))
-    return sorted((k, v) for k, v in _APPS.items()
-                  if str(v).startswith(pref) and not any(x in k for x in NOT_GAMES))
+    out = []
+    for k, v in _APPS.items():
+        if any(x in k for x in NOT_GAMES):
+            continue
+        url = str(v)
+        if url.lower().endswith(".url"):  # raccourcis Steam/Epic du menu Démarrer : l'adresse est DANS le fichier
+            url = _url_of(url)
+        if url.startswith(pref):
+            out.append((k, v))
+    return sorted(out)
+
+
+def _url_of(path):
+    try:
+        for line in Path(path).read_text(encoding="utf-8", errors="ignore").splitlines():
+            if line.lower().startswith("url="):
+                return line[4:].strip()
+    except OSError:
+        pass
+    return ""
+
+
+def steam_library() -> str:
+    os.startfile("steam://nav/games")
+    return "Bibliothèque Steam ouverte."
 
 
 def random_game(store: str = "") -> str:
@@ -524,9 +547,12 @@ def _deezer_track(query: str):
 
 def _shortcut_info(lnk: str):
     """(cible, arguments) d'un raccourci .lnk."""
+    # le chemin passe par une variable d'environnement : avec -Command, un argument en plus n'arrive PAS dans $args
     r = subprocess.run(["powershell", "-NoProfile", "-Command",
-                        "$s=(New-Object -ComObject WScript.Shell).CreateShortcut($args[0]); $s.TargetPath; $s.Arguments", lnk],
-                       capture_output=True, text=True, timeout=10, creationflags=0x08000000)
+                        "[Console]::OutputEncoding=[Text.Encoding]::UTF8;"
+                        "$s=(New-Object -ComObject WScript.Shell).CreateShortcut($env:JARVIS_LNK); $s.TargetPath; $s.Arguments"],
+                       capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=10,
+                       env={**os.environ, "JARVIS_LNK": str(lnk)}, creationflags=0x08000000)
     lines = r.stdout.splitlines() + ["", ""]
     return lines[0].strip(), lines[1].strip()
 

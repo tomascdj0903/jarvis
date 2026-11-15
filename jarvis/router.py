@@ -107,6 +107,7 @@ RULES = [
     (r"\b(lance|joue|ouvre|mets)( moi)?( a)? (un|n'importe quel|n importe quel) (jeu|game)( (sur |de )?(?P<s>steam|epic( games)?))?.*(hasard|n'importe|importe lequel|aleatoire)?",
      lambda m: actions.random_game((m.group("s") or "").split()[0] if m.group("s") else "")
      if re.search(r"hasard|importe|aleatoire|quelconque", m.string) else None),
+    (r"\b(bibliotheque steam|mes jeux steam|ma bibliotheque( de jeux)?)\b", lambda m: actions.steam_library()),
     (r"^(ouvre|affiche|montre)( moi)? (mon |l')?historique( de visionnage)?( (youtube|de youtube|sur youtube))?$",
      lambda m: actions.open_url("https://www.youtube.com/feed/history") or "Historique YouTube ouvert."),
     (r"^ferme( moi)? (l'onglet|cet onglet|l'onglet actif|la page|cette page)$", lambda m: actions.close_tab()),

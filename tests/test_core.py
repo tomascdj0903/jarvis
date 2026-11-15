@@ -1,4 +1,5 @@
 """Tests sans Windows : routeur, comparaison de versions, cerveau (HTTP simulé)."""
+import os
 import sys, types
 sys.path.insert(0, ".")
 import jarvis
@@ -11,7 +12,7 @@ fake.open_app = lambda n: f"open:{n}" if n in KNOWN else f"Application « {n} »
 fake.play_music = lambda q, s: f"play[{s}]:{q}"
 fake.open_url = lambda u: None
 fake.close_tab = lambda n="": f"TAB:{n}"; fake.close_window = lambda n="": "WIN"
-fake.random_game = lambda s="": f"RAND:{s}"
+fake.random_game = lambda s="": f"RAND:{s}"; fake.steam_library = lambda: "STEAMLIB"
 fake.power_mode = lambda m: f"POWER:{m}"; fake.system = lambda a: f"SYS:{a}"
 fake.arrange_window = lambda n, p, exclude=(): f"WIN:{n}|{p}"
 fake.arrange_two = lambda a, pa, b, pb: f"TWO:{a}|{pa}|{b}|{pb}"
@@ -91,6 +92,7 @@ CASES = {
     "ferme la fenêtre": "WIN",
     "Allez Jarvis, lance n'importe quel jeu Steam au hasard.": "RAND:steam",
     "lance un jeu au hasard": "RAND:",
+    "Va dans mes jeux Steam, dans ma bibliothèque Steam.": "STEAMLIB",
     "Non, mets-toi en veille.": "Je me mets en veille. Appelez-moi quand vous voulez.",
     "Mets-moi en mode économie d'énergie.": "POWER:economie",
     "mode économie d'énergie.": "POWER:economie",
@@ -408,6 +410,28 @@ def _session_fixes(A):
     assert A.open_app("l'application YouTube Musique") == "youtube music affiché." and shown == [22]
     assert A.app_windows("youtube music") == [22]  # l'onglet du navigateur n'est pas l'appli
     A._APPS.clear(); A._ALTS.clear()
+    # jeux Steam du menu Démarrer = fichiers .url qui contiennent steam://rungameid/…
+    import tempfile, pathlib
+    d = pathlib.Path(tempfile.mkdtemp())
+    (d / "F1 Manager 2023.url").write_text("[InternetShortcut]\nURL=steam://rungameid/2287220\n")
+    (d / "Steamworks Common Redistributables.url").write_text("[InternetShortcut]\nURL=steam://rungameid/228980\n")
+    A._APPS.update({"f1 manager 2023": str(d / "F1 Manager 2023.url"),
+                    "steamworks common redistributables": str(d / "Steamworks Common Redistributables.url"),
+                    "spotify": "C:/spotify.lnk"})
+    assert [k for k, _ in A.games("steam")] == ["f1 manager 2023"]
+    A._APPS.clear()
+    if os.name == "nt":  # sur le PC de build Windows : lecture RÉELLE d'un raccourci .lnk (bug de 2.2.12)
+        import subprocess as sp
+        lnk = str(d / "Test App.lnk")
+        sp.run(["powershell", "-NoProfile", "-Command",
+                "$s=(New-Object -ComObject WScript.Shell).CreateShortcut($env:L); $s.TargetPath='C:\\Windows\\notepad.exe';"
+                " $s.Arguments='--profile-directory=Default --app-id=cinhimbnkkaeohfgghhklpknlkffjgod'; $s.Save()"],
+               env={**os.environ, "L": lnk}, check=True)
+        assert A._shortcut_info(lnk) == ("C:\\Windows\\notepad.exe",
+                                         "--profile-directory=Default --app-id=cinhimbnkkaeohfgghhklpknlkffjgod"), A._shortcut_info(lnk)
+        print("raccourci .lnk lu correctement")
+    from jarvis.uiclick import clean_target as ct
+    assert ct("toi sur la bibliotheque")[0] == "bibliotheque"
     # clic précis : le titre seul + l'artiste dans la même ligne
     from jarvis.uiclick import _row_score, clean_target, click
 
