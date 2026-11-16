@@ -59,6 +59,8 @@ jobs:
           python -c "import openwakeword.utils as u; u.download_models(['hey_jarvis'])"
       - name: Test réel de la transcription locale (x64)
         run: python tests/stt_check.py
+      - name: Test réel du clic précis dans une appli Chrome (comme YouTube Music)
+        run: python tests/ui_check.py
       - name: Construire Jarvis.exe
         shell: pwsh
         run: |

@@ -71,14 +71,51 @@ def _row_score(want, ctrl, name):
     return min(_score(want, " ".join(texts)), 1.0) - 0.05
 
 
-def find(target: str, deadline=4.0):
-    """Meilleur élément visible de la fenêtre active dont le nom correspond. (ctrl, score) ou (None, 0)."""
+def wake_chrome(hwnd) -> int:
+    """Chrome / Edge (et leurs applis installées comme YouTube Music) n'exposent le contenu de la page
+    à l'accessibilité qu'après qu'un « lecteur » l'a demandé. On le demande sur chaque zone de page
+    (Chrome_RenderWidgetHostHWND) : c'est la méthode utilisée par les lecteurs d'écran. Renvoie le nombre de zones."""
+    import ctypes
+    from ctypes import wintypes
+    user32 = ctypes.windll.user32
+    oleacc = ctypes.windll.oleacc
+    found = []
+
+    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    def cb(h, _):
+        buf = ctypes.create_unicode_buffer(64)
+        user32.GetClassNameW(h, buf, 64)
+        if buf.value == "Chrome_RenderWidgetHostHWND":
+            found.append(h)
+        return True
+    user32.EnumChildWindows(hwnd, cb, 0)
+
+    class GUID(ctypes.Structure):
+        _fields_ = [("a", ctypes.c_ulong), ("b", ctypes.c_ushort), ("c", ctypes.c_ushort), ("d", ctypes.c_ubyte * 8)]
+    iid = GUID(0x618736E0, 0x3C3D, 0x11CF, (ctypes.c_ubyte * 8)(0x81, 0x0C, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71))  # IAccessible
+    for h in found:
+        ptr = ctypes.c_void_p()
+        try:
+            oleacc.AccessibleObjectFromWindow(h, wintypes.DWORD(0xFFFFFFFC), ctypes.byref(iid), ctypes.byref(ptr))  # OBJID_CLIENT
+            user32.SendMessageTimeoutW(h, 0x003D, 0, 0xFFFFFFE7, 2, 500, None)  # WM_GETOBJECT, UiaRootObjectId
+        except Exception:
+            pass
+    return len(found)
+
+
+def find(target: str, deadline=8.0, hwnd=None):
+    """Meilleur élément visible de la fenêtre (active par défaut) dont le nom correspond. (ctrl, score) ou (None, 0)."""
     import ctypes
     import uiautomation as auto
     want, kind, where = clean_target(target)
     if not want:
         return None, 0.0
-    hwnd = ctypes.windll.user32.GetForegroundWindow()
+    hwnd = hwnd or ctypes.windll.user32.GetForegroundWindow()
+    try:
+        if wake_chrome(hwnd):
+            time.sleep(0.8)  # Chrome construit l'arbre de la page
+    except Exception:
+        pass
     root = auto.ControlFromHandle(hwnd)
     if root is None:
         return None, 0.0
@@ -88,7 +125,7 @@ def find(target: str, deadline=4.0):
                   auto.ControlType.DataItemControl, auto.ControlType.SplitButtonControl}
     best, best_s = None, 0.0
     end = time.time() + deadline
-    for _ in range(2):  # Chrome ne remplit son arbre qu'au 1er passage d'un lecteur d'accessibilité
+    for _ in range(6):  # l'arbre de la page arrive par morceaux : on repasse jusqu'à la limite de temps
         for ctrl, _depth in auto.WalkControl(root, includeTop=False, maxDepth=60):
             if time.time() > end:
                 break
@@ -116,7 +153,7 @@ def find(target: str, deadline=4.0):
                 continue
         if best is not None or time.time() > end:
             break
-        time.sleep(0.4)
+        time.sleep(0.6)
     return best, best_s
 
 
@@ -138,7 +175,7 @@ def click(target: str):
     cmd = [sys.executable, "--uiclick", out, target] if getattr(sys, "frozen", False) else \
           [sys.executable, "-m", "jarvis.uiclick", out, target]
     try:
-        subprocess.run(cmd, timeout=12, creationflags=0x08000000 if os.name == "nt" else 0)
+        subprocess.run(cmd, timeout=16, creationflags=0x08000000 if os.name == "nt" else 0)
         with open(out, encoding="utf-8") as f:
             data = json.load(f)
         logging.getLogger("jarvis").info("clic précis « %s » : %s", target, data)

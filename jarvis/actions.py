@@ -605,6 +605,15 @@ def open_in_installed_app(name: str, url: str) -> bool:
                 new = fresh[0]
                 break
         if new:
+            if before:         # la nouvelle prend EXACTEMENT la place et la taille de l'ancienne, puis l'ancienne se ferme
+                try:
+                    old = next(iter(before))
+                    buf = ctypes.create_string_buffer(44)   # WINDOWPLACEMENT
+                    ctypes.memmove(buf, ctypes.byref(ctypes.c_uint(44)), 4)
+                    if user32.GetWindowPlacement(old, buf):
+                        user32.SetWindowPlacement(new, buf)
+                except Exception as e:
+                    log.warning("position de la fenêtre : %s", e)
             for h in before:   # une seule fenêtre YouTube Music : l'ancienne est fermée
                 user32.PostMessageW(h, 0x0010, 0, 0)
             _force_front(new)
