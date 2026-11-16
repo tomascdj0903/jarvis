@@ -196,8 +196,40 @@ def click(target: str):
         return None
 
 
+def _activate(ctrl):
+    """Déclenche l'élément SANS viser à la souris quand c'est possible (comme Entrée sur un lien) :
+    marche même si l'élément est à moitié caché dans un carrousel. Sinon clic au centre de sa partie VISIBLE."""
+    import uiautomation as auto
+    for how in ("invoke", "legacy"):
+        try:
+            if how == "invoke":
+                pat = ctrl.GetPattern(auto.PatternId.InvokePattern)
+                if pat:
+                    pat.Invoke()
+                    return "invoke"
+            else:
+                pat = ctrl.GetPattern(auto.PatternId.LegacyIAccessiblePattern)
+                if pat and pat.DefaultAction:
+                    pat.DoDefaultAction()
+                    return "action"
+        except Exception:
+            pass
+    r = ctrl.BoundingRectangle
+    try:  # partie visible = élément ∩ fenêtre de premier niveau
+        top = ctrl.GetTopLevelControl().BoundingRectangle
+        left, right = max(r.left, top.left), min(r.right, top.right)
+        up, down = max(r.top, top.top), min(r.bottom, top.bottom)
+        if right - left > 4 and down - up > 4:
+            auto.Click((left + right) // 2, (up + down) // 2, waitTime=0.1)
+            return "souris"
+    except Exception:
+        pass
+    ctrl.Click(simulateMove=False, waitTime=0.1)
+    return "souris"
+
+
 def click_here(target: str, found=None):
-    """(Dans le processus à part) clique l'élément trouvé, ou None si rien de sûr (=> vision)."""
+    """(Dans le processus à part) déclenche l'élément trouvé, ou None si rien de sûr (=> vision)."""
     try:
         ctrl, sc = found or find(target)
     except Exception:
@@ -206,13 +238,10 @@ def click_here(target: str, found=None):
         return None
     name = ctrl.Name.strip()
     try:
-        ctrl.Click(simulateMove=False, waitTime=0.1)
+        how = _activate(ctrl)
     except Exception:
-        try:
-            ctrl.GetInvokePattern().Invoke()
-        except Exception:
-            return None
-    return f"Clic sur « {name[:60]} »."
+        return None
+    return f"Clic sur « {name[:60]} »." + ("" if how != "souris" else "")
 
 
 def cli(out: str, target: str):

@@ -117,11 +117,22 @@ def click_on(target: str, cfg, confirm) -> str:
     if not pos:
         return f"Je ne trouve pas « {target} » à l'écran."
     u = ctypes.windll.user32
+    # La capture est en VRAIS pixels, mais Jarvis tourne en pixels « mis à l'échelle » (125 %, 150 %…) :
+    # sans ça, le clic tombe à côté dès que l'affichage Windows n'est pas à 100 %.
+    try:
+        u.SetThreadDpiAwarenessContext.restype = ctypes.c_void_p
+        old_ctx = u.SetThreadDpiAwarenessContext(ctypes.c_void_p(-4))  # PER_MONITOR_AWARE_V2, ce fil seulement
+    except Exception:
+        old_ctx = None
     u.SetCursorPos(*pos)  # on montre d'abord où l'on va cliquer
     risky = re.search(r"supprim|effac|delete|payer|achet|command|envoy|valid|desinstall|désinstall|vider|formater|acheter",
                       target, re.I)
-    if risky and not confirm(f"Je clique ici, sur {target} ?"):
-        return "Clic annulé."
-    u.SetCursorPos(*pos); time.sleep(0.05)
-    u.mouse_event(0x0002, 0, 0, 0, 0); u.mouse_event(0x0004, 0, 0, 0, 0)
-    return f"Clic sur {target}."
+    try:
+        if risky and not confirm(f"Je clique ici, sur {target} ?"):
+            return "Clic annulé."
+        u.SetCursorPos(*pos); time.sleep(0.05)
+        u.mouse_event(0x0002, 0, 0, 0, 0); u.mouse_event(0x0004, 0, 0, 0, 0)
+    finally:
+        if old_ctx:
+            u.SetThreadDpiAwarenessContext(ctypes.c_void_p(old_ctx))
+    return f"J'ai cliqué là où je vois {target}. Dites-moi si ce n'est pas le bon endroit."
