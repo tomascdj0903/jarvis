@@ -15,6 +15,8 @@ from logging.handlers import RotatingFileHandler
 _h = RotatingFileHandler(config.LOG_FILE, maxBytes=1_000_000, backupCount=2, encoding="utf-8")
 _h.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
 logging.basicConfig(level=logging.INFO, handlers=[_h])
+from . import feedback as _feedback  # noqa: E402
+_feedback.install()  # mémorise les dernières actions, pour comprendre un « tu n'as pas cliqué dessus »
 log = logging.getLogger("jarvis")
 
 STARTUP_LNK = Path(os.environ.get("APPDATA", "")) / r"Microsoft\Windows\Start Menu\Programs\Startup\Jarvis.lnk"
@@ -208,6 +210,8 @@ class Jarvis:
                     self.hud.notify("Je n'ai rien entendu.", 3)
                     continue
                 self.hud.set("thinking", 0, text)
+                from . import feedback
+                feedback.check_complaint(self.cfg, text, *getattr(self, "_last_exchange", ("", "")))
                 from .router import route
                 reply = route(text)  # commandes courantes : instantané, 0 token
                 if reply is None:
@@ -219,8 +223,8 @@ class Jarvis:
                 else:
                     log.info("routeur local")
                 self.say(reply)
-                from . import feedback
                 feedback.check_reply(self.cfg, text, reply)
+                self._last_exchange = (text, reply)
             except Exception as e:
                 import time as _t
                 log.exception("loop")

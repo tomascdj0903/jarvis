@@ -27,6 +27,59 @@ FAIL = re.compile(r"introuvable|je ne trouve pas|impossible|je n'arrive pas|je n
                   r"aucun(e)? .*trouv|refus|erreur|échec|n'ai pas pu|ne sais pas faire|je ne peux pas", re.I)
 _lock = threading.Lock()
 
+# Ce que Jarvis a fait pendant l'échange précédent (outils, clics…), pour comprendre une plainte.
+COMPLAINT = re.compile(
+    r"\b(tu (n'?as|as) pas|t'?as pas|tu n'?as rien|t'?as rien) (clique|lance|ouvert|ferme|fait|compris|mis|trouve|joue|cherche|"
+    r"affiche|tape|selectionne)|\b(c'?est|ce n'?est) pas (ca|ce que|la bonne|le bon|celle|celui)|\brien a voir\b|"
+    r"\btu t'?es trompe|\bmauvais(e)? (musique|video|fenetre|page|appli|application|endroit|bouton|titre|chanson)|"
+    r"\bca (n'?a pas|a pas) marche|\bca (ne )?marche pas\b|\bnon,? (pas ca|c'?est pas|tu as|t'as)|\bt'?as (clique|lance|ouvert) (a cote|n'importe)")
+
+
+class _Recent:
+    """Garde les lignes du journal de l'échange en cours et du précédent."""
+    def __init__(self):
+        self.current, self.previous = [], []
+
+    def add(self, msg):
+        if msg.startswith("USER:"):
+            self.previous, self.current = self.current, []
+        elif not msg.startswith(("JARVIS:", "réveil", "voix prête", "Imported", "Using writeable", "Creating",
+                                 "Could not import", "# Generating")):
+            self.current = (self.current + [msg])[-8:]
+
+
+RECENT = _Recent()
+
+
+class _Handler(__import__("logging").Handler):
+    def emit(self, record):
+        try:
+            RECENT.add(record.getMessage())
+        except Exception:
+            pass
+
+
+def install():
+    import logging
+    logging.getLogger("jarvis").addHandler(_Handler())
+
+
+def _norm(t):
+    import unicodedata
+    t = "".join(c for c in unicodedata.normalize("NFD", str(t).lower()) if unicodedata.category(c) != "Mn")
+    return re.sub(r"[’`]", "'", t)
+
+
+def check_complaint(cfg, text, prev_text, prev_reply):
+    """L'utilisateur dit que Jarvis s'est trompé : on envoie TOUT DE SUITE un rapport « correction »
+    (demande d'avant, réponse de Jarvis, ce qu'il a fait, la plainte). Renvoie True si c'en est une."""
+    if not prev_text or not COMPLAINT.search(_norm(text)):
+        return False
+    actions = " ; ".join(RECENT.previous)[-220:]
+    detail = f"Jarvis a répondu : {prev_reply} | Plainte : {text} | Actions : {actions}"
+    record(cfg, "correction", prev_text, detail)
+    return True
+
 
 def mask(text: str) -> str:
     """Retire ce qui pourrait identifier quelqu'un : e-mails, numéros, liens, chemins personnels."""
@@ -39,6 +92,8 @@ def mask(text: str) -> str:
 
 
 def _signature(kind, detail):
+    if kind == "correction":  # même genre d'erreur = même début de réponse de Jarvis
+        detail = str(detail).split(" | ")[0]
     d = re.sub(r"« [^»]* »|\"[^\"]*\"|\d+", "…", str(detail).lower())
     return f"{kind}:{d[:100]}"
 
@@ -70,7 +125,8 @@ def record(cfg, kind, phrase, detail):
             week = [r for r in rows if r.get("sig") == sig and
                     now - datetime.datetime.fromisoformat(r["t"]) < datetime.timedelta(days=7)]
             sent_today = any(r.get("sent") and r["t"][:10] == now.isoformat()[:10] for r in week)
-            send = (len(week) + 1 >= 2 or kind == "exception") and not sent_today and cfg.get("send_reports", True)
+            send = (len(week) + 1 >= 2 or kind in ("exception", "correction")) and not sent_today \
+                and cfg.get("send_reports", True)
             rows.append({"t": now.isoformat(timespec="seconds"), "kind": kind, "sig": sig,
                          "phrase": mask(phrase), "detail": mask(detail)[:400], "sent": send})
             LOCAL.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in rows[-500:]) + "\n", encoding="utf-8")

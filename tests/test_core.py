@@ -377,6 +377,19 @@ def test_feedback(tmp=None):
     cfg["send_reports"] = False
     F.record(cfg, "exception", "", "KeyError: x @ app.py:12")
     assert len(sent) == 1
+    # plainte de l'utilisateur -> rapport « correction » IMMÉDIAT (dès la 1re fois), avec les actions faites
+    cfg["send_reports"] = True; sent.clear()
+    F.RECENT.add("USER: clique sur pistolet rose 2")
+    F.RECENT.add("clic précis « pistolet rose 2 » : {'result': 'Clic sur « Pistolet Rose 2 »'}")
+    F.RECENT.add("USER: tu n'as pas cliqué dessus.")
+    assert F.check_complaint(cfg, "Tu n'as pas cliqué dessus.", "clique sur pistolet rose 2", "Clic sur « Pistolet Rose 2 ».")
+    assert len(sent) == 1 and sent[0]["kind"] == "correction" and sent[0]["phrase"] == "clique sur pistolet rose 2"
+    assert "Pistolet Rose 2" in sent[0]["detail"] and "Plainte" in sent[0]["detail"]
+    for ok in ("Non, c'est pas ça.", "T'as lancé n'importe quoi, rien à voir", "ça marche pas", "mauvaise musique"):
+        assert F.COMPLAINT.search(F._norm(ok)), ok
+    for no in ("Non, mets-toi en veille.", "lance la musique de PNL", "c'est parfait merci", "pas mal"):
+        assert not F.COMPLAINT.search(F._norm(no)), no
+    assert not F.check_complaint(cfg, "ça marche pas", "", "")  # pas d'échange avant : rien
     F.threading.Thread = real_thread  # ne pas casser les autres tests (subprocess utilise des threads)
 
 
