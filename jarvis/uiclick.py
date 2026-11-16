@@ -154,6 +154,17 @@ def find(target: str, deadline=8.0, hwnd=None):
         if best is not None or time.time() > end:
             break
         time.sleep(0.6)
+    if best is not None and best.ControlType not in (auto.ControlType.HyperlinkControl, auto.ControlType.ButtonControl):
+        # une LIGNE a été trouvée (« Armistice Jossman 3:12 ») : on vise son lien / bouton de titre
+        ww = set(want.split())
+        try:
+            for c, _d in auto.WalkControl(best, includeTop=False, maxDepth=4):
+                if c.ControlType in (auto.ControlType.HyperlinkControl, auto.ControlType.ButtonControl) and c.Name:
+                    nw = [x for x in _norm(c.Name).split() if x not in STOP]
+                    if nw and all(x in ww for x in nw):
+                        return c, best_s
+        except Exception:
+            pass
     return best, best_s
 
 

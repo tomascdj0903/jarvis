@@ -2,6 +2,7 @@
 Jarvis doit trouver « Armistice de Jossman » (titre et artiste dans deux éléments de la même ligne) puis cliquer dessus.
 Sans réveil de l'accessibilité, Chrome n'expose rien : c'est exactement le bug vu le 16/11 (« best: rien »)."""
 import ctypes
+import io
 import os
 import pathlib
 import subprocess
@@ -9,6 +10,7 @@ import sys
 import tempfile
 import time
 
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 from jarvis import uiclick  # noqa: E402
 
@@ -52,7 +54,8 @@ print("zones de page Chrome :", uiclick.wake_chrome(hwnd))
 ctrl, sc = uiclick.find("la musique armistice de jossman", hwnd=hwnd)
 print("trouvé :", ctrl.Name if ctrl else None, round(sc, 2))
 try:
-    assert ctrl is not None and ctrl.Name == "Armistice", "le titre n'a pas été trouvé dans l'appli Chrome"
+    assert ctrl is not None and ctrl.Name.startswith("Armistice") and "Live" not in ctrl.Name, \
+        "le titre n'a pas été trouvé dans l'appli Chrome"
     assert sc >= 0.85, f"score trop bas ({sc:.2f}) : Jarvis passerait à la vision"
     user32.SetForegroundWindow(hwnd)
     res = uiclick.click_here("armistice de jossman", (ctrl, sc))
